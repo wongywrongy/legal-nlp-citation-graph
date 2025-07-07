@@ -1,4 +1,8 @@
 plan.md
 /src/data/
 /src/models/
-/venv/
+/venv/bin/
+/venv/include/
+/venv/lib/
+/venv/share/
+/venv/pyvenv.cfg
