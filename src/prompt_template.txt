@@ -1,7 +1,33 @@
-Below is a list of possibly malformed legal citations extracted from a legal opinion. Your task is to clean and return only the full valid case names in a one-per-line format. Do not include any commentary or additional text.
+You are given a list of possibly malformed or partial legal citations extracted from a U.S. Supreme Court opinion titled "{{CASE}}". Your task is to return cleaned, structured citations in the format below.
 
-List:
+Each output line must follow this structure:
+<source_case> ||| <cited_case_name> ||| <volume> ||| <reporter> ||| <page> [||| <pin_cite>] [||| (<year>)] [||| (<parenthetical_info>)]
+
+- If a field is missing, leave it blank but still include the separator.
+- Normalize reporter abbreviations (e.g., "U. S." → "U.S.")
+- Don’t include commentary, headings, or extra lines.
+- Return only the structured citation lines, one per line.
+
+---
+
+Example Input:
+Youngstown Sheet & Tube Co. v. Sawyer, 343 U. S. 579, 634 (1952) (Jackson, J., concurring)
+See United States v. Detroit Timber & Lumber Co., 200 U. S. 321, 337
+Ray v. Blair, 343 U. S. 214
+Nixon v. Fitzger
+Huntington v. Attrill, 146
+
+Expected Output:
+Trump v. United States ||| Youngstown Sheet & Tube Co. v. Sawyer ||| 343 ||| U.S. ||| 579 ||| 634 ||| (1952) ||| (Jackson, J., concurring)
+Trump v. United States ||| United States v. Detroit Timber & Lumber Co. ||| 200 ||| U.S. ||| 321 ||| 337 ||| |||
+Trump v. United States ||| Ray v. Blair ||| 343 ||| U.S. ||| 214 ||| ||| |||
+Trump v. United States ||| Huntington v. Attrill ||| 146 ||| ||| ||| ||| |||
+
+---
+
+Now clean and structure the following list:
 {{TEXT}}
 
+---
 Cleaned Citations:
 Text:
