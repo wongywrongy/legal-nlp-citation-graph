@@ -1,0 +1,7 @@
+Below is a list of possibly malformed legal citations extracted from a legal opinion. Your task is to clean and return only the full valid case names in a one-per-line format. Do not include any commentary or additional text.
+
+List:
+{{TEXT}}
+
+Cleaned Citations:
+Text:
