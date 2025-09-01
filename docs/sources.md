@@ -1,0 +1,4 @@
+- eyecite: citation parsing & normalization
+- reporters-db: reporter metadata used by eyecite
+- CourtListener API: optional enrichment for canonical URLs/IDs
+- React Flow, PDF.js, NetworkX: UI/graph toolchain

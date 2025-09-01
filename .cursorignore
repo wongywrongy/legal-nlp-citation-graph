@@ -1,0 +1,8 @@
+# Ignore generated assets and local data
+/tmp/
+/node_modules/
+/dist/
+/build/
+/.venv/
+/.env
+.DS_Store

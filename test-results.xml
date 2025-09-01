@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="23" failures="15" skipped="3" tests="66" time="1.077" timestamp="2025-09-01T12:28:15.015956-07:00" hostname="W11_KW"><testcase classname="tests.test_api_endpoints" name="test_documents_endpoint_returns_empty_list_when_no_documents" time="0.050"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpses98bjd'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpses98bjd'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_documents_endpoint_returns_correct_structure" time="0.032"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpu07w009j'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpu07w009j'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_documents_endpoint_handles_pagination" time="0.033"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpnewu4jq5'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpnewu4jq5'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_graph_endpoint_returns_empty_graph_when_no_data" time="0.033"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpsavsv897'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpsavsv897'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_graph_endpoint_returns_correct_structure" time="0.029"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmppfhi5vhy'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmppfhi5vhy'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_graph_endpoint_handles_confidence_filter" time="0.033"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpw9vqgwm0'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpw9vqgwm0'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_ingest_endpoint_accepts_files" time="0.028"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp97ha3i8g'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp97ha3i8g'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_process_endpoint_returns_response" time="0.032"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp8ckg8tjv'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp8ckg8tjv'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_api_docs_accessible" time="0.030"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpea1t_0lh'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpea1t_0lh'</error></testcase><testcase classname="tests.test_api_endpoints" name="test_openapi_schema_accessible" time="0.036"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpfp85x3zl'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpfp85x3zl'</error></testcase><testcase classname="tests.test_citation_parser" name="test_citation_parser_initialization" time="0.001" /><testcase classname="tests.test_citation_parser" name="test_parse_simple_citation" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:22: in test_parse_simple_citation
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_parse_citation_without_year" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:39: in test_parse_citation_without_year
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_parse_multiple_citations" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:56: in test_parse_multiple_citations
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_parse_no_citations" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:75: in test_parse_no_citations
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_citation_confidence_default" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:86: in test_citation_confidence_default
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_citation_normalized_key" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:98: in test_citation_normalized_key
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_citation_span_positions" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:112: in test_citation_span_positions
+    citations = parser.parse_citations(text)
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_citation_parser" name="test_parser_handles_edge_cases" time="0.000"><failure message="AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?">tests\test_citation_parser.py:128: in test_parser_handles_edge_cases
+    citations = parser.parse_citations("")
+                ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CitationParser' object has no attribute 'parse_citations'. Did you mean: 'parse_citation_text'?</failure></testcase><testcase classname="tests.test_frontend_components" name="test_citation_graph_component_import" time="0.002"><skipped type="pytest.skip" message="CitationGraph component not available">C:\Users\avlis\OneDrive\Documentos\legal-nlp-citation-graph\tests\test_frontend_components.py:22: CitationGraph component not available</skipped></testcase><testcase classname="tests.test_frontend_components" name="test_api_client_functions_exist" time="0.001"><skipped type="pytest.skip" message="Frontend API client not available">C:\Users\avlis\OneDrive\Documentos\legal-nlp-citation-graph\tests\test_frontend_components.py:44: Frontend API client not available</skipped></testcase><testcase classname="tests.test_frontend_components" name="test_frontend_pages_exist" time="0.000"><skipped type="pytest.skip" message="Page documents/page.tsx not found">C:\Users\avlis\OneDrive\Documentos\legal-nlp-citation-graph\tests\test_frontend_components.py:62: Page documents/page.tsx not found</skipped></testcase><testcase classname="tests.test_frontend_components" name="test_frontend_configuration" time="0.000" /><testcase classname="tests.test_frontend_components" name="test_frontend_dependencies" time="0.001" /><testcase classname="tests.test_frontend_components" name="test_frontend_build_configuration" time="0.001" /><testcase classname="tests.test_frontend_components" name="test_frontend_styling_configuration" time="0.000" /><testcase classname="tests.test_health" name="test_health_endpoint_always_works" time="0.028"><failure message="AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}&#10;  &#10;  Differing items:&#10;  {'status': 'healthy'} != {'status': 'ok'}&#10;  &#10;  Full diff:&#10;    {&#10;  -     'status': 'ok',...&#10;  &#10;  ...Full output truncated (4 lines hidden), use '-vv' to show">tests\test_health.py:14: in test_health_endpoint_always_works
+    assert response.json() == {"status": "ok"}
+E   AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}
+E     
+E     Differing items:
+E     {'status': 'healthy'} != {'status': 'ok'}
+E     
+E     Full diff:
+E       {
+E     -     'status': 'ok',...
+E     
+E     ...Full output truncated (4 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_health" name="test_health_endpoint_always_works" time="0.000"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp8im8g767'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp8im8g767'</error></testcase><testcase classname="tests.test_health" name="test_health_endpoint_returns_json" time="0.029"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpuzo6e6xu'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpuzo6e6xu'</error></testcase><testcase classname="tests.test_health" name="test_health_endpoint_fast_response" time="0.029"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp9wlehg31'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp9wlehg31'</error></testcase><testcase classname="tests.test_health" name="test_health_endpoint_consistent_response" time="0.032"><failure message="AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}&#10;  &#10;  Differing items:&#10;  {'status': 'healthy'} != {'status': 'ok'}&#10;  &#10;  Full diff:&#10;    {&#10;  -     'status': 'ok',...&#10;  &#10;  ...Full output truncated (4 lines hidden), use '-vv' to show">tests\test_health.py:46: in test_health_endpoint_consistent_response
+    assert response1.json() == response2.json() == response3.json() == {"status": "ok"}
+E   AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}
+E     
+E     Differing items:
+E     {'status': 'healthy'} != {'status': 'ok'}
+E     
+E     Full diff:
+E       {
+E     -     'status': 'ok',...
+E     
+E     ...Full output truncated (4 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_health" name="test_health_endpoint_consistent_response" time="0.000"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpfh5g8ox1'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpfh5g8ox1'</error></testcase><testcase classname="tests.test_health" name="test_health_endpoint_handles_multiple_requests" time="0.035"><failure message="AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}&#10;  &#10;  Differing items:&#10;  {'status': 'healthy'} != {'status': 'ok'}&#10;  &#10;  Full diff:&#10;    {&#10;  -     'status': 'ok',...&#10;  &#10;  ...Full output truncated (4 lines hidden), use '-vv' to show">tests\test_health.py:64: in test_health_endpoint_handles_multiple_requests
+    assert response.json() == {"status": "ok"}
+E   AssertionError: assert {'status': 'healthy'} == {'status': 'ok'}
+E     
+E     Differing items:
+E     {'status': 'healthy'} != {'status': 'ok'}
+E     
+E     Full diff:
+E       {
+E     -     'status': 'ok',...
+E     
+E     ...Full output truncated (4 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_health" name="test_health_endpoint_handles_multiple_requests" time="0.000"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpzqtzlt3_'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpzqtzlt3_'</error></testcase><testcase classname="tests.test_integration" name="test_complete_document_workflow" time="0.042"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp5hfztpnz'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp5hfztpnz'</error></testcase><testcase classname="tests.test_integration" name="test_api_endpoints_consistency" time="0.036"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp6oy0l5f8'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp6oy0l5f8'</error></testcase><testcase classname="tests.test_integration" name="test_error_handling" time="0.037"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpkgj_ufa2'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpkgj_ufa2'</error></testcase><testcase classname="tests.test_integration" name="test_api_response_headers" time="0.031"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpr5oe7cy7'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpr5oe7cy7'</error></testcase><testcase classname="tests.test_integration" name="test_api_pagination_consistency" time="0.041"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp0kk1sxey'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp0kk1sxey'</error></testcase><testcase classname="tests.test_integration" name="test_graph_filtering_consistency" time="0.044"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp035germw'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmp035germw'</error></testcase><testcase classname="tests.test_integration" name="test_health_endpoint_under_load" time="0.055"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpjmd3iezf'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpjmd3iezf'</error></testcase><testcase classname="tests.test_integration" name="test_api_documentation_consistency" time="0.033"><error message="failed on teardown with &quot;PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpr82da73q'&quot;">tests\conftest.py:41: in test_db
+    os.unlink(db_path)
+E   PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\avlis\\AppData\\Local\\Temp\\tmpr82da73q'</error></testcase><testcase classname="tests.test_models" name="test_document_model_creation" time="0.001"><failure message="AttributeError: 'Document' object has no attribute 'processed'">tests\test_models.py:24: in test_document_model_creation
+    assert document.processed == 0  # Default value
+           ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'Document' object has no attribute 'processed'</failure></testcase><testcase classname="tests.test_models" name="test_document_model_optional_fields" time="0.001" /><testcase classname="tests.test_models" name="test_citation_model_creation" time="0.001"><failure message="assert None == 0.0&#10; +  where None = &lt;backend.models.Citation object at 0x000001804EA3F0E0&gt;.confidence">tests\test_models.py:59: in test_citation_model_creation
+    assert citation.confidence == 0.0  # Default value
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert None == 0.0
+E    +  where None = &lt;backend.models.Citation object at 0x000001804EA3F0E0&gt;.confidence</failure></testcase><testcase classname="tests.test_models" name="test_citation_model_optional_fields" time="0.001" /><testcase classname="tests.test_models" name="test_document_citation_relationship" time="0.000" /><testcase classname="tests.test_models" name="test_model_validation" time="0.000"><failure message="Failed: DID NOT RAISE &lt;class 'Exception'&gt;">tests\test_models.py:112: in test_model_validation
+    with pytest.raises(Exception):
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE &lt;class 'Exception'&gt;</failure></testcase><testcase classname="tests.test_models" name="test_model_defaults" time="0.001"><failure message="AttributeError: 'Document' object has no attribute 'processed'">tests\test_models.py:137: in test_model_defaults
+    assert document.processed == 0
+           ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'Document' object has no attribute 'processed'</failure></testcase></testsuite></testsuites>

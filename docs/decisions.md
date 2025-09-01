@@ -1,0 +1,3 @@
+- Chosen eyecite over custom regex: higher precision, maintained dataset of reporters.
+- LLM only for tie-breakers: reduces cost and error; improves determinism.
+- CourtListener optional: allows external IDs without making the app a legal search engine.

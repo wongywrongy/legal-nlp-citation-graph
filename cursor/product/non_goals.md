@@ -1,0 +1,3 @@
+- No bespoke citation grammar; rely on eyecite + reporters-db.
+- No automatic download of copyrighted PDFs.
+- No hallucinated links to documents we don’t have or can’t resolve.

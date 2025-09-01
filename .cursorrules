@@ -1,0 +1,16 @@
+# Cursor Project Rules
+
+# Goal
+- Build an AI-assisted legal citation graph using proven libraries for extraction/normalization (eyecite + reporters-db) and optional CourtListener for resolution.
+- Minimize custom NLP; use LLMs only for tie-breaking and ambiguous linking.
+- Maintain strict, typed data contracts end-to-end.
+
+# Style & Constraints
+- Prefer deterministic pipelines before any model call.
+- Keep prompts in /cursor/ai and /cursor/prompts; keep product/eng context separate.
+- No secret values in repo; reference .env.example only.
+- Tests before features that rely on model calls.
+
+# Autofix & Refactor
+- When Cursor proposes code, ensure it aligns with /cursor/eng/api.contract.md and /cursor/eng/data.models.md.
+- Any new dependency touching parsing must be added to /docs/decisions.md with rationale.

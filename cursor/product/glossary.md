@@ -1,0 +1,3 @@
+- Citation: reference to another legal decision, often with reporter/volume/page.
+- Normalization: converting a raw citation string to a canonical key.
+- Resolution: mapping a normalized citation to a specific ingested document or known external ID.
