@@ -160,7 +160,7 @@ const CitationGraph: React.FC = () => {
       >
         <MiniMap nodeColor={nodeColor} zoomable pannable />
         <Controls />
-        <Background variant="dots" gap={12} size={1} />
+        <Background gap={12} size={1} />
       </ReactFlow>
     </div>
   );

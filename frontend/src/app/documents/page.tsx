@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Calendar, User, ArrowRight, RefreshCw } from 'lucide-react';
+import { FileText, Calendar, User, ArrowRight } from 'lucide-react';
 import { documentApi } from '@/lib/api';
 
 interface Document {
@@ -16,7 +16,6 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updatingTitles, setUpdatingTitles] = useState(false);
 
   const loadDocuments = async () => {
     try {
@@ -57,42 +56,9 @@ export default function DocumentsPage() {
 
   return (
     <div className="container mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Legal Documents</h1>
-        <div className="flex space-x-2">
-          <button
-            onClick={async () => {
-              try {
-                setUpdatingTitles(true);
-                const response = await fetch('/v1/documents/update-all-titles', { method: 'POST' });
-                const result = await response.json();
-                alert(result.message);
-                // Refresh the documents list
-                loadDocuments();
-              } catch (err) {
-                alert('Failed to update titles');
-                console.error(err);
-              } finally {
-                setUpdatingTitles(false);
-              }
-            }}
-            disabled={updatingTitles}
-            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center"
-          >
-            {updatingTitles ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Updating...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Update Titles
-              </>
-            )}
-          </button>
+              <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">Legal Documents</h1>
         </div>
-      </div>
 
       <div className="mb-8">
         <p className="text-gray-600">

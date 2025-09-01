@@ -113,6 +113,23 @@ class DocumentProcessor:
             if not document.source_path or not os.path.exists(document.source_path):
                 raise ValueError(f"PDF file not found: {document.source_path}")
             
+            # Check if title needs updating (if it looks like a filename rather than a legal title)
+            current_title = document.title
+            if (current_title and 
+                (current_title.endswith('.pdf') or 
+                 len(current_title) < 20 or 
+                 not any(char.isupper() for char in current_title[:10]))):
+                
+                # Extract proper title from PDF content
+                new_title = self._extract_document_title(document.source_path)
+                if new_title and new_title != current_title:
+                    document.title = new_title
+                    db.commit()
+                    self.logger.info("Updated document title during processing", 
+                                    doc_id=document_id, 
+                                    old_title=current_title, 
+                                    new_title=new_title)
+            
             # Step 1: Extract PDF text
             pdf_result = self.pdf_processor.process_pdf(document.source_path)
             
