@@ -1,18 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
+  // Required so the prod Dockerfile can ship a self-contained `server.js`.
   output: 'standalone',
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: process.env.NODE_ENV === 'production' 
-          ? '/v1/:path*'  // Use relative path in production
-          : 'http://localhost:8000/v1/:path*',  // Use localhost in development
-      },
-    ]
-  },
-}
+  // The frontend talks to the backend directly via axios using
+  // NEXT_PUBLIC_API_URL — no rewrites are needed. Earlier versions of this
+  // config rewrote /api/* → /v1/* through Next, which would have collided
+  // with the new /api/search and /api/similar endpoints living on the
+  // backend. Removed to avoid that future foot-gun.
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

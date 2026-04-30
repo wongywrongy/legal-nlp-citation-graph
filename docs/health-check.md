@@ -8,7 +8,7 @@ The Legal Citation Graph system includes a comprehensive health check mechanism 
 
 ### 1. System Health Verification Script
 
-The primary health check script (`health_check.py`) performs comprehensive system validation:
+The primary health check script (`scripts/health_check.py`) performs comprehensive system validation:
 
 - **File Structure Validation**: Verifies all required directories and files exist
 - **Docker Status Check**: Confirms container health and operational status
@@ -18,7 +18,7 @@ The primary health check script (`health_check.py`) performs comprehensive syste
 
 ### 2. Automated Test Suite
 
-The testing framework (`run_test_suite.py`) provides comprehensive testing capabilities:
+The testing framework (`scripts/run_test_suite.py`) provides comprehensive testing capabilities:
 
 - **Test Categorization**: Organized test execution by component type
 - **Automated Reporting**: Generates JUnit XML and HTML test reports
@@ -32,7 +32,7 @@ The testing framework (`run_test_suite.py`) provides comprehensive testing capab
 Execute the comprehensive health check script:
 
 ```bash
-python health_check.py
+python scripts/health_check.py
 ```
 
 **Expected Output:**
@@ -72,24 +72,24 @@ Overall Status: 5/5 checks passed
 
 ```bash
 # Execute complete test suite with detailed reporting
-python run_test_suite.py --full
+python scripts/run_test_suite.py --full
 ```
 
 #### Test Categories
 
 ```bash
 # Run tests by category
-python run_test_suite.py --category
+python scripts/run_test_suite.py --category
 ```
 
 #### Specific Test Types
 
 ```bash
 # Run tests with specific markers
-python run_test_suite.py --marker unit
-python run_test_suite.py --marker integration
-python run_test_suite.py --marker api
-python run_test_suite.py --marker health
+python scripts/run_test_suite.py --marker unit
+python scripts/run_test_suite.py --marker integration
+python scripts/run_test_suite.py --marker api
+python scripts/run_test_suite.py --marker health
 ```
 
 ### Individual Test Execution
@@ -253,7 +253,7 @@ For production environments, consider implementing automated health monitoring:
 # Create a monitoring script
 #!/bin/bash
 while true; do
-    python health_check.py
+    python scripts/health_check.py
     if [ $? -ne 0 ]; then
         echo "Health check failed at $(date)"
         # Send alert or restart services
@@ -270,8 +270,8 @@ The health check system integrates with continuous integration pipelines:
 # Example GitHub Actions workflow
 - name: Run Health Checks
   run: |
-    python health_check.py
-    python run_test_suite.py --full
+    python scripts/health_check.py
+    python scripts/run_test_suite.py --full
 ```
 
 ## Performance Considerations

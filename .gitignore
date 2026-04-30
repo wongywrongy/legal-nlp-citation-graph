@@ -65,6 +65,9 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+test-results.xml
+test-results.html
+test-results-coverage/
 
 # IDE
 .vscode/

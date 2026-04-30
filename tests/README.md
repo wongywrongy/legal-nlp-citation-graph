@@ -11,7 +11,7 @@ pip install -r requirements-test.txt
 
 ### 2. Run Health Check (Recommended First Step)
 ```bash
-python health_check.py
+python scripts/health_check.py
 ```
 
 ### 3. Run All Tests
@@ -121,7 +121,7 @@ pytest tests/test_frontend_components.py -v
 The `health_check.py` script provides a quick way to verify system health:
 
 ```bash
-python health_check.py
+python scripts/health_check.py
 ```
 
 **What it checks**:
@@ -200,7 +200,7 @@ pytest tests/ -m "not slow"
 #### 1. Backend Not Running
 ```bash
 # Start backend
-python start_backend.py
+python scripts/start_backend.py
 
 # Or with Docker
 docker-compose up -d
@@ -220,7 +220,7 @@ ls -la data/
 
 # Recreate database
 rm data/citations.db
-python start_backend.py
+python scripts/start_backend.py
 ```
 
 #### 4. Docker Issues

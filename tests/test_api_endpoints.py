@@ -93,9 +93,10 @@ def test_ingest_endpoint_accepts_files(client: TestClient):
 @pytest.mark.integration
 @pytest.mark.fast
 def test_process_endpoint_returns_response(client: TestClient):
-    """Test that process endpoint returns a response"""
+    """Process now enqueues to Redis. With Redis unavailable (test env), the
+    endpoint returns 503; with Redis available, 200."""
     response = client.post("/v1/process")
-    assert response.status_code in [200, 500]  # Either success or processing error
+    assert response.status_code in [200, 503]
 
 @pytest.mark.api
 @pytest.mark.integration

@@ -2,52 +2,119 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+    --background: 0 0% 100%;
+    --foreground: 240 6% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 6% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 6% 10%;
+
+    --primary: 240 6% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 234 89% 56%;          /* indigo-600 */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 234 89% 56%;
+
+    --radius: 0.5rem;
+
+    /* Confidence (semantic) */
+    --confidence-high: 160 84% 39%;        /* emerald-600 */
+    --confidence-medium: 38 92% 50%;       /* amber-500 */
+    --confidence-low: 350 89% 60%;         /* rose-500 */
+    --confidence-unresolved: 240 5% 65%;   /* zinc-400 */
+
+    /* Court rings */
+    --court-scotus: 234 89% 35%;
+    --court-federal: 217 91% 60%;
+    --court-state: 173 80% 40%;
+    --court-other: 240 5% 65%;
+  }
+
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 6% 10%;
+
+    --secondary: 240 5% 14%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 5% 14%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 234 89% 70%;
+    --accent-foreground: 240 6% 10%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5% 18%;
+    --input: 240 5% 18%;
+    --ring: 234 89% 70%;
+
+    --confidence-high: 160 84% 50%;
+    --confidence-medium: 38 92% 60%;
+    --confidence-low: 350 89% 68%;
+    --confidence-unresolved: 240 5% 35%;
+
+    --court-scotus: 234 89% 65%;
+    --court-federal: 217 91% 70%;
+    --court-state: 173 80% 55%;
+    --court-other: 240 5% 35%;
   }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    font-feature-settings: "tnum" 1, "ss01" 1, "cv11" 1;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  /* Hairline borders feel right on a dense tool */
+  .border-hairline {
+    border-width: 0.5px;
+  }
 }
 
-/* React Flow custom styles */
-.react-flow__node-default {
-  @apply bg-white border-2 border-law-blue rounded-lg shadow-md;
+/* Sigma.js canvas should blend into the background, not stand out. */
+.sigma-container {
+  background: hsl(var(--background)) !important;
+}
+.sigma-container canvas {
+  outline: none;
 }
 
-.react-flow__node-default.selected {
-  @apply border-law-gold;
+/* Used by the citation→PDF jump-to-page flash. */
+.flash-target {
+  @apply animate-flash-highlight;
 }
-
-.react-flow__edge-path {
-  @apply stroke-law-blue;
-}
-
-.confidence-high {
-  @apply stroke-green-500;
-}
-
-.confidence-medium {
-  @apply stroke-yellow-500;
-}
-
-.confidence-low {
-  @apply stroke-red-500;
-}
-

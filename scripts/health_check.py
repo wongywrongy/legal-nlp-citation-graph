@@ -20,7 +20,7 @@ def print_status(message, status="INFO"):
     indicator = status_indicators.get(status, "[INFO]")
     print(f"{indicator} {message}")
 
-def check_backend_health(base_url="http://localhost:8000"):
+def check_backend_health(base_url="http://localhost:8001"):
     """Check if backend is healthy"""
     try:
         start_time = time.time()
@@ -49,7 +49,7 @@ def check_backend_health(base_url="http://localhost:8000"):
         print_status(f"Backend Health: Error - {e}", "ERROR")
         return False
 
-def check_api_endpoints(base_url="http://localhost:8000"):
+def check_api_endpoints(base_url="http://localhost:8001"):
     """Check if API endpoints are accessible"""
     endpoints = [
         ("/v1/documents", "Documents API"),

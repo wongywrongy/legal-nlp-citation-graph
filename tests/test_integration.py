@@ -24,9 +24,9 @@ def test_complete_document_workflow(client: TestClient):
     assert len(graph_data["nodes"]) == 0
     assert len(graph_data["edges"]) == 0
     
-    # Step 3: Try to process documents (should work even with no documents)
+    # Step 3: Try to process documents — enqueues to Redis (or 503 if absent).
     response = client.post("/v1/process")
-    assert response.status_code in [200, 500]  # Either success or no documents to process
+    assert response.status_code in [200, 503]
 
 @pytest.mark.integration
 @pytest.mark.api

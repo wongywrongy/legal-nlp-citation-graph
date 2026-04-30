@@ -1,170 +1,364 @@
 """
-Citation parsing service for extracted citation spans
+Citation parsing using `eyecite` as the single source of truth.
+
+`eyecite` recognizes hundreds of reporters, parallel citations, short-form
+references, and id./supra. references. Everything that follows in the pipeline
+(deduplication, candidate matching, LLM tie-break) operates on the structured
+output of this module — there is no regex fallback.
+
+Phase 2 enhancement: `eyecite.resolve_citations()` is run over the citation
+list to link short/supra/id forms back to their canonical full citation. When
+a short form resolves to a full parent, this module copies the parent's
+reporter/volume/page/year/case_name onto the short form so they share the
+same `normalized_key` (which the deterministic matcher in `document_processor`
+uses for linking). Resolved short forms also receive a +0.20 confidence boost.
 """
-import structlog
-from typing import List, Dict, Any
+from __future__ import annotations
+
 from dataclasses import dataclass
-import re
+from typing import Dict, List, Optional
+
+import structlog
+from eyecite import clean_text, get_citations, resolve_citations
+from eyecite.models import (
+    FullCaseCitation,
+    IdCitation,
+    ShortCaseCitation,
+    SupraCitation,
+)
+
+from backend.pdf_processor import PageSpan, PDFProcessor
 
 logger = structlog.get_logger()
 
+
 @dataclass
 class ParsedCitation:
-    """Parsed citation data structure"""
     raw_text: str
     normalized_key: str
-    reporter: str = None
-    volume: int = None
-    page: int = None
-    year: int = None
-    page_number: int = None
-    span_start: int = None
-    span_end: int = None
+    reporter: Optional[str] = None
+    volume: Optional[int] = None
+    page: Optional[int] = None
+    year: Optional[int] = None
+    case_name: Optional[str] = None
+    page_number: Optional[int] = None
+    span_start: Optional[int] = None
+    span_end: Optional[int] = None
     confidence: float = 0.0
+    citation_type: str = "full"
+    resolved_to_full: bool = False
+
+
+# Baseline confidence by citation type — exact full citations are highly
+# trustworthy; short/supra/id refs are weaker signals on their own.
+_BASE_CONFIDENCE = {
+    "full": 0.85,
+    "short": 0.55,
+    "supra": 0.45,
+    "id": 0.40,
+}
+
+# Confidence boost when a short/supra/id citation is successfully linked back
+# to a FullCaseCitation parent by eyecite.resolve_citations().
+_RESOLVED_BOOST = 0.20
+_MAX_RESOLVED_CONFIDENCE = 0.95
+
 
 class CitationParser:
-    """Citation parsing service"""
-    
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logger.bind(component="citation_parser")
-    
-    def parse_citations_from_spans(self, citation_spans: List[Dict]) -> List[ParsedCitation]:
-        """
-        Parse citation spans into structured citation objects
-        
-        Args:
-            citation_spans: List of citation span dictionaries from PDF processor
-            
-        Returns:
-            List of parsed citation objects
-        """
-        parsed_citations = []
-        
-        for span in citation_spans:
+        self._pdf_processor = PDFProcessor()
+
+    def parse_from_full_text(
+        self,
+        full_text: str,
+        page_spans: List[PageSpan],
+    ) -> List[ParsedCitation]:
+        cleaned = clean_text(full_text, ["html", "all_whitespace"])
+        try:
+            citations = get_citations(cleaned)
+        except Exception as e:
+            self.logger.error("eyecite failed", error=str(e))
+            return []
+
+        parents = self._resolve_parents(citations)
+
+        parsed: List[ParsedCitation] = []
+        for citation in citations:
             try:
-                parsed = self._parse_single_citation(span)
-                if parsed:
-                    parsed_citations.append(parsed)
+                parent = parents.get(id(citation))
+                converted = self._convert(citation, page_spans, parent)
+                if converted is not None:
+                    parsed.append(converted)
             except Exception as e:
-                self.logger.warning("Failed to parse citation span", 
-                                  span=span, error=str(e))
+                self.logger.warning(
+                    "Failed to convert citation",
+                    citation=str(citation),
+                    error=str(e),
+                )
+
+        self.logger.info(
+            "Parsed citations",
+            total=len(parsed),
+            full=sum(1 for c in parsed if c.citation_type == "full"),
+            short=sum(1 for c in parsed if c.citation_type == "short"),
+            resolved=sum(1 for c in parsed if c.resolved_to_full),
+        )
+        return parsed
+
+    @staticmethod
+    def _resolve_parents(citations) -> Dict[int, FullCaseCitation]:
+        """
+        Build {id(citation): parent_full_citation} via eyecite.resolve_citations.
+
+        eyecite returns a dict[Resource, list[CitationBase]] where each Resource
+        wraps the canonical FullCaseCitation. We invert it so per-citation
+        lookup is O(1) without re-walking the resolution map.
+        """
+        parents: Dict[int, FullCaseCitation] = {}
+        try:
+            resolutions = resolve_citations(citations)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("resolve_citations failed", error=str(e))
+            return parents
+
+        for resource, members in resolutions.items():
+            full = getattr(resource, "citation", None)
+            if not isinstance(full, FullCaseCitation):
                 continue
-        
-        self.logger.info("Citation parsing completed", 
-                        input_spans=len(citation_spans),
-                        parsed_citations=len(parsed_citations))
-        
-        return parsed_citations
-    
-    def _parse_single_citation(self, span: Dict) -> ParsedCitation:
-        """Parse a single citation span"""
-        raw_text = span.get("raw_text", "")
-        page_number = span.get("page_number", 0)
-        span_start = span.get("span_start", 0)
-        span_end = span.get("span_end", 0)
-        confidence = span.get("confidence", 0.0)
-        
-        # Extract citation components using regex
-        citation_data = self._extract_citation_components(raw_text)
-        
-        # Create normalized key
-        normalized_key = self._create_normalized_key(citation_data)
-        
+            for member in members:
+                if member is full:
+                    continue
+                parents[id(member)] = full
+        return parents
+
+    def _convert(
+        self,
+        citation,
+        page_spans: List[PageSpan],
+        parent: Optional[FullCaseCitation],
+    ) -> Optional[ParsedCitation]:
+        span_start, span_end = self._span(citation)
+        page_number = (
+            self._pdf_processor.resolve_page_number(span_start, page_spans)
+            if span_start is not None
+            else None
+        )
+
+        if isinstance(citation, FullCaseCitation):
+            return self._convert_full(citation, span_start, span_end, page_number)
+        if isinstance(citation, ShortCaseCitation):
+            return self._convert_short(
+                citation, span_start, span_end, page_number, parent
+            )
+        if isinstance(citation, SupraCitation):
+            return self._convert_short_like(
+                citation, "supra", span_start, span_end, page_number, parent
+            )
+        if isinstance(citation, IdCitation):
+            return self._convert_short_like(
+                citation, "id", span_start, span_end, page_number, parent
+            )
+        return None
+
+    @staticmethod
+    def _span(citation) -> tuple[Optional[int], Optional[int]]:
+        token = getattr(citation, "token", None)
+        if token is None:
+            return None, None
+        start = getattr(token, "start", None)
+        end = getattr(token, "end", None)
+        return start, end
+
+    def _convert_full(
+        self,
+        citation: FullCaseCitation,
+        span_start: Optional[int],
+        span_end: Optional[int],
+        page_number: Optional[int],
+    ) -> ParsedCitation:
+        groups = citation.groups or {}
+        reporter = (
+            citation.corrected_reporter()
+            or groups.get("reporter")
+        )
+        volume = self._coerce_int(groups.get("volume"))
+        page = self._coerce_int(groups.get("page"))
+
+        metadata = getattr(citation, "metadata", None)
+        year = self._coerce_int(getattr(metadata, "year", None)) if metadata else None
+        case_name = self._extract_case_name(metadata)
+
+        normalized_key = self._normalized_key(reporter, volume, page, year)
+        raw_text = self._raw_text(citation)
+
         return ParsedCitation(
             raw_text=raw_text,
             normalized_key=normalized_key,
-            reporter=citation_data.get("reporter"),
-            volume=citation_data.get("volume"),
-            page=citation_data.get("page"),
-            year=citation_data.get("year"),
+            reporter=reporter,
+            volume=volume,
+            page=page,
+            year=year,
+            case_name=case_name,
             page_number=page_number,
             span_start=span_start,
             span_end=span_end,
-            confidence=confidence
+            confidence=_BASE_CONFIDENCE["full"],
+            citation_type="full",
         )
-    
-    def _extract_citation_components(self, text: str) -> Dict[str, Any]:
-        """Extract citation components from raw text"""
-        components = {}
-        
-        # U.S. Supreme Court: 123 U.S. 456
-        us_match = re.match(r'(\d+)\s+U\.S\.\s+(\d+)', text)
-        if us_match:
-            components["volume"] = int(us_match.group(1))
-            components["reporter"] = "U.S."
-            components["page"] = int(us_match.group(2))
-            return components
-        
-        # Federal Reporter: 123 F.2d 456
-        fed_match = re.match(r'(\d+)\s+F\.(?:2d|3d|4d)?\s+(\d+)', text)
-        if fed_match:
-            components["volume"] = int(fed_match.group(1))
-            components["reporter"] = "F."
-            components["page"] = int(fed_match.group(2))
-            return components
-        
-        # State cases: 123 N.E.2d 456
-        state_match = re.match(r'(\d+)\s+([A-Z]{2})\.?\s+(?:2d|3d)?\s+(\d+)', text)
-        if state_match:
-            components["volume"] = int(state_match.group(1))
-            components["reporter"] = state_match.group(2)
-            components["page"] = int(state_match.group(3))
-            return components
-        
-        # Generic pattern: 123 Reporter 456
-        generic_match = re.match(r'(\d+)\s+([A-Za-z]+)\.?\s+(\d+)', text)
-        if generic_match:
-            components["volume"] = int(generic_match.group(1))
-            components["reporter"] = generic_match.group(2)
-            components["page"] = int(generic_match.group(3))
-            return components
-        
-        return components
-    
-    def _create_normalized_key(self, components: Dict[str, Any]) -> str:
-        """Create a normalized key for the citation"""
-        parts = []
-        
-        if components.get("volume"):
-            parts.append(str(components["volume"]))
-        
-        if components.get("reporter"):
-            parts.append(components["reporter"])
-        
-        if components.get("page"):
-            parts.append(str(components["page"]))
-        
-        return " ".join(parts) if parts else "unknown"
-    
-    def parse_citations(self, text: str) -> List[ParsedCitation]:
-        """
-        Parse citations from raw text (fallback method)
-        
-        Args:
-            text: Raw text to search for citations
-            
-        Returns:
-            List of parsed citations
-        """
-        # This is a simplified fallback - in production you'd use eyecite
-        citations = []
-        
-        # Basic citation patterns
-        patterns = [
-            r'(\d+)\s+U\.S\.\s+(\d+)',
-            r'(\d+)\s+F\.(?:2d|3d|4d)?\s+(\d+)',
-            r'(\d+)\s+[A-Z]{2}\.?\s+(?:2d|3d)?\s+(\d+)',
-        ]
-        
-        for pattern in patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
-                citation = ParsedCitation(
-                    raw_text=match.group(0),
-                    normalized_key=match.group(0),
-                    confidence=0.6
-                )
-                citations.append(citation)
-        
-        return citations
 
+    def _convert_short(
+        self,
+        citation: ShortCaseCitation,
+        span_start: Optional[int],
+        span_end: Optional[int],
+        page_number: Optional[int],
+        parent: Optional[FullCaseCitation],
+    ) -> ParsedCitation:
+        groups = citation.groups or {}
+        reporter = citation.corrected_reporter() or groups.get("reporter")
+        volume = self._coerce_int(groups.get("volume"))
+        page = self._coerce_int(groups.get("page"))
+        year, case_name = None, None
+
+        if parent is not None:
+            inherited = self._inherit_from_parent(parent)
+            # Use explicit None checks rather than truthiness — empty strings
+            # from malformed eyecite output should still inherit, and the
+            # behaviour stays consistent across reporter/volume/page.
+            if reporter is None or reporter == "":
+                reporter = inherited["reporter"]
+            if volume is None:
+                volume = inherited["volume"]
+            if page is None:
+                page = inherited["page"]
+            year = inherited["year"]
+            case_name = inherited["case_name"]
+
+        normalized_key = self._normalized_key(reporter, volume, page, year)
+        confidence = _BASE_CONFIDENCE["short"]
+        resolved = parent is not None
+        if resolved:
+            confidence = min(confidence + _RESOLVED_BOOST, _MAX_RESOLVED_CONFIDENCE)
+        return ParsedCitation(
+            raw_text=self._raw_text(citation),
+            normalized_key=normalized_key,
+            reporter=reporter,
+            volume=volume,
+            page=page,
+            year=year,
+            case_name=case_name,
+            page_number=page_number,
+            span_start=span_start,
+            span_end=span_end,
+            confidence=confidence,
+            citation_type="short",
+            resolved_to_full=resolved,
+        )
+
+    def _convert_short_like(
+        self,
+        citation,
+        kind: str,
+        span_start: Optional[int],
+        span_end: Optional[int],
+        page_number: Optional[int],
+        parent: Optional[FullCaseCitation],
+    ) -> ParsedCitation:
+        raw = self._raw_text(citation)
+        reporter = volume = page = year = None
+        case_name = None
+        normalized_key = raw.strip().lower()
+
+        if parent is not None:
+            inherited = self._inherit_from_parent(parent)
+            reporter = inherited["reporter"]
+            volume = inherited["volume"]
+            page = inherited["page"]
+            year = inherited["year"]
+            case_name = inherited["case_name"]
+            normalized_key = self._normalized_key(reporter, volume, page, year)
+
+        confidence = _BASE_CONFIDENCE[kind]
+        resolved = parent is not None
+        if resolved:
+            confidence = min(confidence + _RESOLVED_BOOST, _MAX_RESOLVED_CONFIDENCE)
+        return ParsedCitation(
+            raw_text=raw,
+            normalized_key=normalized_key,
+            reporter=reporter,
+            volume=volume,
+            page=page,
+            year=year,
+            case_name=case_name,
+            page_number=page_number,
+            span_start=span_start,
+            span_end=span_end,
+            confidence=confidence,
+            citation_type=kind,
+            resolved_to_full=resolved,
+        )
+
+    @classmethod
+    def _inherit_from_parent(cls, parent: FullCaseCitation) -> Dict[str, Optional[object]]:
+        groups = parent.groups or {}
+        reporter = parent.corrected_reporter() or groups.get("reporter")
+        metadata = getattr(parent, "metadata", None)
+        return {
+            "reporter": reporter,
+            "volume": cls._coerce_int(groups.get("volume")),
+            "page": cls._coerce_int(groups.get("page")),
+            "year": cls._coerce_int(getattr(metadata, "year", None)) if metadata else None,
+            "case_name": cls._extract_case_name(metadata),
+        }
+
+    @staticmethod
+    def _normalized_key(
+        reporter: Optional[str],
+        volume: Optional[int],
+        page: Optional[int],
+        year: Optional[int],
+    ) -> str:
+        parts = [
+            (reporter or "?").replace(" ", "_"),
+            str(volume) if volume is not None else "?",
+            str(page) if page is not None else "?",
+        ]
+        if year is not None:
+            parts.append(str(year))
+        return "_".join(parts)
+
+    @staticmethod
+    def _raw_text(citation) -> str:
+        for method in ("corrected_citation_full", "corrected_citation"):
+            fn = getattr(citation, method, None)
+            if callable(fn):
+                try:
+                    value = fn()
+                    if value:
+                        return value
+                except Exception:
+                    pass
+        token = getattr(citation, "token", None)
+        if token is not None and hasattr(token, "data"):
+            return token.data
+        return str(citation)
+
+    @staticmethod
+    def _extract_case_name(metadata) -> Optional[str]:
+        if metadata is None:
+            return None
+        plaintiff = getattr(metadata, "plaintiff", None)
+        defendant = getattr(metadata, "defendant", None)
+        if plaintiff and defendant:
+            return f"{plaintiff} v. {defendant}"
+        return getattr(metadata, "case_name", None)
+
+    @staticmethod
+    def _coerce_int(value) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None

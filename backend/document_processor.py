@@ -1,176 +1,184 @@
 """
-Document processing service that orchestrates PDF processing and citation parsing
-"""
-import os
-import hashlib
-import structlog
-from typing import List, Dict
-from sqlalchemy.orm import Session
-import pdfplumber
+Document processing service: orchestrates PDF extraction, citation parsing,
+and deterministic candidate linking.
 
-from backend.pdf_processor import PDFProcessor
+The LLM tie-break path lives in `backend.llm_resolver` and is invoked from
+`_link_citations` only when deterministic matching produces multiple
+candidates. There is no fuzzy "within ±N volumes" matching: an unresolved
+citation stays unresolved.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from dataclasses import asdict
+from typing import Dict, List, Optional
+
+import structlog
+from sqlalchemy.orm import Session
+
 from backend.citation_parser import CitationParser, ParsedCitation
-from backend.models import Document as DocumentModel, Citation as CitationModel
+from backend.config import settings
 from backend.database import SessionLocal
+from backend.models import Citation as CitationModel
+from backend.models import Document as DocumentModel
+from backend.pdf_processor import PDFProcessor
 
 logger = structlog.get_logger()
 
+
+_TITLE_PATTERNS = [
+    re.compile(r"^[A-Z][A-Za-z\s&,\-\'\.]+(?:v\.|vs\.|versus)\s+[A-Z][A-Za-z\s&,\-\'\.]+$", re.IGNORECASE),
+    re.compile(r"^(?:IN RE|IN THE MATTER OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$", re.IGNORECASE),
+    re.compile(r"^(?:UNITED STATES|STATE OF|COMMONWEALTH OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$", re.IGNORECASE),
+    re.compile(r"^(?:PEOPLE OF|CITY OF|COUNTY OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$", re.IGNORECASE),
+]
+_TITLE_NEGATIVE_PREFIXES = (
+    "Page",
+    "Date",
+    "Docket",
+    "Case",
+    "No.",
+    "Filed",
+    "Decided",
+    "Before",
+    "Opinion",
+)
+
+
 class DocumentProcessor:
-    """
-    Main document processing service following cursor/ai/extraction.pipeline.md
-    """
-    
-    def __init__(self):
+    """Synchronous orchestrator (Phase 2 introduces an async wrapper)."""
+
+    def __init__(self) -> None:
         self.pdf_processor = PDFProcessor()
         self.citation_parser = CitationParser()
         self.logger = logger.bind(component="document_processor")
-    
+
+    # ---- Title extraction ----------------------------------------------------
+
     def _extract_document_title(self, file_path: str) -> str:
-        """Extract document title from PDF content instead of filename"""
         try:
-            # Extract first page text to find title
-            with pdfplumber.open(file_path) as pdf:
-                if pdf.pages:
-                    first_page = pdf.pages[0]
-                    text = first_page.extract_text() or ""
-                    
-                    # Look for title patterns in first page
-                    lines = text.split('\n')
-                    
-                    # Legal document title patterns
-                    title_patterns = [
-                        # Look for lines that look like case titles
-                        r'^[A-Z][A-Za-z\s&,\-\'\.]+(?:v\.|vs\.|versus)\s+[A-Z][A-Za-z\s&,\-\'\.]+$',
-                        # Look for lines with "IN RE" or "IN THE MATTER OF"
-                        r'^(?:IN RE|IN THE MATTER OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$',
-                        # Look for lines with "UNITED STATES" or "STATE OF"
-                        r'^(?:UNITED STATES|STATE OF|COMMONWEALTH OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$',
-                        # Look for lines with "PEOPLE OF" or "CITY OF"
-                        r'^(?:PEOPLE OF|CITY OF|COUNTY OF)\s+[A-Z][A-Za-z\s&,\-\'\.]+$'
-                    ]
-                    
-                    import re
-                    
-                    # Try to find a title using patterns
-                    for line in lines[:15]:  # Check first 15 lines
-                        line = line.strip()
-                        if line and len(line) > 15 and len(line) < 300:  # Reasonable title length
-                            # Check if line matches any title pattern
-                            for pattern in title_patterns:
-                                if re.match(pattern, line, re.IGNORECASE):
-                                    return line
-                            
-                            # Check if line looks like a title (starts with capital, has reasonable length)
-                            if (line[0].isupper() and 
-                                not line.startswith('Page') and 
-                                not line.startswith('Date') and
-                                not line.startswith('Docket') and
-                                not line.startswith('Case') and
-                                not line.startswith('No.') and
-                                not line.startswith('Filed') and
-                                not line.startswith('Decided')):
-                                return line
-                    
-                    # Fallback: use first non-empty line that looks like a title
-                    for line in lines:
-                        line = line.strip()
-                        if (line and len(line) > 10 and len(line) < 200 and 
-                            line[0].isupper() and 
-                            not any(line.startswith(x) for x in ['Page', 'Date', 'Docket', 'Case', 'No.', 'Filed', 'Decided', 'Before', 'Opinion'])):
-                            return line[:150]  # Limit length
-                    
-                    # Last resort: use filename without extension
-                    return os.path.basename(file_path).replace('.pdf', '')
-                    
+            text = self.pdf_processor.extract_first_page_text(file_path)
         except Exception as e:
-            self.logger.warning("Failed to extract title from PDF", file_path=file_path, error=str(e))
-            # Fallback to filename
-            return os.path.basename(file_path).replace('.pdf', '')
-    
+            self.logger.warning("Failed to read first page", file_path=file_path, error=str(e))
+            return os.path.basename(file_path).replace(".pdf", "")
+
+        if not text:
+            return os.path.basename(file_path).replace(".pdf", "")
+
+        lines = [ln.strip() for ln in text.split("\n")]
+
+        for line in lines[:15]:
+            if 15 < len(line) < 300:
+                for pat in _TITLE_PATTERNS:
+                    if pat.match(line):
+                        return line
+                if line[:1].isupper() and not line.startswith(_TITLE_NEGATIVE_PREFIXES):
+                    return line
+
+        for line in lines:
+            if (
+                10 < len(line) < 200
+                and line[:1].isupper()
+                and not line.startswith(_TITLE_NEGATIVE_PREFIXES)
+            ):
+                return line[:150]
+
+        return os.path.basename(file_path).replace(".pdf", "")
+
+    # ---- Single-document pipeline -------------------------------------------
+
     def process_document(self, document_id: str) -> Dict:
-        """
-        Process a document through the complete pipeline:
-        1) PDF Text extraction
-        2) Citation parsing
-        3) Store citations in database
-        4) Link candidates (basic implementation)
-        
-        Args:
-            document_id: UUID of document to process
-            
-        Returns:
-            Processing results summary
-        """
         self.logger.info("Starting document processing", document_id=document_id)
-        
+
         db = SessionLocal()
         try:
-            # Get document from database
-            document = db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
-            if not document:
+            document = (
+                db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
+            )
+            if document is None:
                 raise ValueError(f"Document not found: {document_id}")
-            
             if not document.source_path or not os.path.exists(document.source_path):
                 raise ValueError(f"PDF file not found: {document.source_path}")
-            
-            # Check if title needs updating (if it looks like a filename rather than a legal title)
-            current_title = document.title
-            if (current_title and 
-                (current_title.endswith('.pdf') or 
-                 len(current_title) < 20 or 
-                 not any(char.isupper() for char in current_title[:10]))):
-                
-                # Extract proper title from PDF content
-                new_title = self._extract_document_title(document.source_path)
-                if new_title and new_title != current_title:
-                    document.title = new_title
-                    db.commit()
-                    self.logger.info("Updated document title during processing", 
-                                    doc_id=document_id, 
-                                    old_title=current_title, 
-                                    new_title=new_title)
-            
-            # Step 1: Extract PDF text
-            pdf_result = self.pdf_processor.process_pdf(document.source_path)
-            
-            # Step 2: Parse citations
-            parsed_citations = self.citation_parser.parse_citations_from_spans(
-                pdf_result["citations"]
-            )
-            
-            # Step 3: Store citations in database
-            stored_citations = self._store_citations(db, document_id, parsed_citations)
-            
-            # Step 4: Basic candidate linking (simplified)
-            linked_citations = self._link_citations(db, stored_citations)
-            
+
+            self._maybe_refresh_title(db, document)
+
+            full_text, page_spans = self.pdf_processor.extract_full_text(document.source_path)
+            # Persist text so the embedding worker can pick it up without
+            # re-parsing the PDF, and so /api/search can render snippets.
+            if full_text and document.full_text != full_text:
+                document.full_text = full_text
+                db.commit()
+            parsed = self.citation_parser.parse_from_full_text(full_text, page_spans)
+            deduped = self._dedupe(parsed)
+
+            stored = self._store_citations(db, document_id, deduped)
+            linked = self._link_citations(db, stored)
+
             result = {
                 "document_id": document_id,
-                "pdf_pages": pdf_result["total_pages"],
-                "pdf_chars": pdf_result["total_chars"],
-                "citations_found": len(parsed_citations),
-                "citations_stored": len(stored_citations),
-                "citations_linked": linked_citations,
-                "processing_status": "completed"
+                "pdf_pages": len(page_spans),
+                "pdf_chars": len(full_text),
+                "citations_found": len(parsed),
+                "citations_stored": len(stored),
+                "citations_linked": linked,
+                "processing_status": "completed",
             }
-            
             self.logger.info("Document processing completed", **result)
             return result
-            
         except Exception as e:
-            self.logger.error("Document processing failed", 
-                            document_id=document_id, 
-                            error=str(e))
+            self.logger.error(
+                "Document processing failed", document_id=document_id, error=str(e)
+            )
             raise
         finally:
             db.close()
-    
-    def _store_citations(self, db: Session, from_doc_id: str, 
-                        parsed_citations: List[ParsedCitation]) -> List[CitationModel]:
-        """Store parsed citations in database"""
-        stored_citations = []
-        
+
+    def _maybe_refresh_title(self, db: Session, document: DocumentModel) -> None:
+        current = document.title or ""
+        looks_like_filename = (
+            current.endswith(".pdf")
+            or len(current) < 20
+            or not any(c.isupper() for c in current[:10])
+        )
+        if not looks_like_filename:
+            return
+        new_title = self._extract_document_title(document.source_path)
+        if new_title and new_title != current:
+            document.title = new_title
+            db.commit()
+            self.logger.info(
+                "Refreshed document title",
+                doc_id=document.id,
+                old_title=current,
+                new_title=new_title,
+            )
+
+    @staticmethod
+    def _dedupe(citations: List[ParsedCitation]) -> List[ParsedCitation]:
+        seen = set()
+        out: List[ParsedCitation] = []
+        for c in citations:
+            key = (c.normalized_key, c.page_number)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(c)
+        return out
+
+    def _store_citations(
+        self,
+        db: Session,
+        from_doc_id: str,
+        parsed_citations: List[ParsedCitation],
+    ) -> List[CitationModel]:
+        stored: List[CitationModel] = []
         for parsed in parsed_citations:
+            breakdown: Dict[str, float] = {"eyecite_base": parsed.confidence}
+            if parsed.resolved_to_full:
+                breakdown["resolved_to_full"] = 0.20
             citation = CitationModel(
                 from_doc_id=from_doc_id,
                 raw_text=parsed.raw_text,
@@ -182,204 +190,239 @@ class DocumentProcessor:
                 page_number=parsed.page_number,
                 span_start=parsed.span_start,
                 span_end=parsed.span_end,
+                citation_type=parsed.citation_type,
                 confidence=parsed.confidence,
-                resolution_notes="[]"  # Empty JSON array
+                resolution_notes="[]",
+                confidence_breakdown=breakdown,
             )
-            
             db.add(citation)
-            stored_citations.append(citation)
-        
+            stored.append(citation)
         db.commit()
-        
-        # Refresh to get IDs
-        for citation in stored_citations:
+        for citation in stored:
             db.refresh(citation)
-        
-        self.logger.info("Citations stored", 
-                        document_id=from_doc_id,
-                        count=len(stored_citations))
-        
-        return stored_citations
-    
+        self.logger.info(
+            "Citations stored", document_id=from_doc_id, count=len(stored)
+        )
+        return stored
+
+    # ---- Candidate resolution -----------------------------------------------
+
     def _link_citations(self, db: Session, citations: List[CitationModel]) -> int:
         """
-        Enhanced citation linking - process ALL possible connections between documents
-        This is a one-time intensive process that will be stored in the database
+        Stage 1: exact (reporter, volume, page) match → single candidate doc.
+        Stage 2: if multiple, narrow by year.
+        Stage 3: LLM tie-break — gated by `feature_llm_resolver`. Leaves
+        citation unresolved when ambiguous and the resolver is off.
+        Stage 4: CourtListener external lookup — gated by
+        `feature_external_enrichment`. For citations still without a
+        `to_doc_id` but with reporter/volume/page, fetch the case metadata
+        from CourtListener and stash it in `citation.external_resolution`.
+        The inspector renders these as "external" (link icon, "Not in
+        corpus" pill) rather than the muted "fully unresolved" state.
         """
-        linked_count = 0
-        
-        # Get all documents for cross-referencing
-        all_documents = db.query(DocumentModel).all()
-        self.logger.info("Processing citations across all documents", 
-                        total_documents=len(all_documents),
-                        total_citations=len(citations))
-        
+        from backend.llm_resolver import resolve_ambiguous_citation_sync  # local import to avoid cycle when LLM disabled
+
+        linked = 0
         for citation in citations:
-            if not all([citation.reporter, citation.volume, citation.page]):
-                continue  # Skip incomplete citations
-            
-            # Find ALL candidate documents with matching citations
-            candidates = db.query(DocumentModel).join(CitationModel).filter(
+            if not (citation.reporter and citation.volume and citation.page):
+                continue
+
+            candidates = self._find_candidates(db, citation)
+            if len(candidates) == 1:
+                self._apply_match(citation, candidates[0], boost=0.15, note="Exact reporter/volume/page match")
+                linked += 1
+                continue
+
+            if len(candidates) > 1 and citation.year is not None:
+                year_filtered = [c for c in candidates if c.year == citation.year]
+                if len(year_filtered) == 1:
+                    self._apply_match(
+                        citation, year_filtered[0], boost=0.10,
+                        note="Reporter/volume/page + year match",
+                    )
+                    linked += 1
+                    continue
+
+            if len(candidates) > 1 and settings.feature_llm_resolver:
+                resolution = resolve_ambiguous_citation_sync(citation, candidates)
+                if (
+                    resolution
+                    and resolution.get("best_document_id")
+                    and resolution.get("confidence", 0) >= 0.5
+                ):
+                    chosen = next(
+                        (c for c in candidates if c.id == resolution["best_document_id"]),
+                        None,
+                    )
+                    if chosen is not None:
+                        citation.to_doc_id = chosen.id
+                        citation.confidence = float(resolution["confidence"])
+                        citation.resolution_notes = json.dumps(resolution.get("notes", []))
+                        breakdown = dict(citation.confidence_breakdown or {})
+                        breakdown["llm_resolved"] = float(resolution["confidence"])
+                        citation.confidence_breakdown = breakdown
+                        linked += 1
+
+        # Stage 4: external (CourtListener) lookup for still-unresolved
+        # citations that have full reporter/volume/page data. Runs AFTER
+        # in-corpus stages so we never overwrite a real `to_doc_id` —
+        # external resolution is a fallback, not a competitor.
+        if settings.feature_external_enrichment:
+            still_unresolved = [
+                c
+                for c in citations
+                if c.to_doc_id is None
+                and c.reporter
+                and c.volume
+                and c.page
+                and c.external_resolution is None
+            ]
+            if still_unresolved:
+                self._external_lookup(still_unresolved)
+
+        db.commit()
+        self.logger.info("Citation linking completed", linked=linked, total=len(citations))
+        return linked
+
+    @staticmethod
+    def _external_lookup(citations: List[CitationModel]) -> None:
+        """Async CourtListener lookup; populates `citation.external_resolution`.
+
+        Runs `asyncio.run()` because the document processor sits on a
+        worker thread (called via `asyncio.to_thread`), not on an event
+        loop. Each citation is looked up serially to keep the rate-limit
+        envelope simple — for a typical opinion this is 5–20 lookups.
+        Failures are swallowed per-citation so one network blip doesn't
+        block the whole batch.
+        """
+        import asyncio as _asyncio
+
+        from backend.courtlistener import lookup_citation
+
+        async def _run() -> None:
+            for citation in citations:
+                try:
+                    meta = await lookup_citation(
+                        citation.reporter, citation.volume, citation.page
+                    )
+                except Exception:
+                    meta = None
+                if not meta:
+                    continue
+                year_val: int | None = None
+                date_filed = meta.get("date_filed")
+                if date_filed:
+                    try:
+                        year_val = int(str(date_filed)[:4])
+                    except ValueError:
+                        year_val = None
+                citation.external_resolution = {
+                    "case_name": meta.get("case_name"),
+                    "year": year_val,
+                    "absolute_url": meta.get("absolute_url"),
+                    "court": meta.get("court"),
+                }
+
+        _asyncio.run(_run())
+
+    @staticmethod
+    def _find_candidates(db: Session, citation: CitationModel) -> List[DocumentModel]:
+        """
+        Find documents in the corpus that appear to be the cited work.
+
+        Heuristic: a document IS a candidate if it contains a citation matching
+        the same (reporter, volume, page) — this catches cases where the
+        cited document also self-references its reporter pinpoint in caption
+        text. CourtListener enrichment (Phase 4) adds direct reporter metadata
+        on Document for a stronger match later.
+        """
+        rows = (
+            db.query(DocumentModel)
+            .join(CitationModel, CitationModel.from_doc_id == DocumentModel.id)
+            .filter(
                 CitationModel.reporter == citation.reporter,
                 CitationModel.volume == citation.volume,
                 CitationModel.page == citation.page,
-                CitationModel.from_doc_id != citation.from_doc_id  # Don't link to self
-            ).all()
-            
-            if len(candidates) == 1:
-                # Exact match - high confidence link
-                citation.to_doc_id = candidates[0].id
-                citation.confidence = min(citation.confidence + 0.3, 1.0)
-                citation.resolution_notes = '["Exact reporter/volume/page match"]'
-                linked_count += 1
-                
-            elif len(candidates) > 1:
-                # Multiple candidates - create links to ALL matching documents
-                # This creates a network of connections
-                for candidate in candidates:
-                    # Create additional citation records for multiple connections
-                    if candidate.id != citation.to_doc_id:  # Avoid duplicates
-                        additional_citation = CitationModel(
-                            from_doc_id=citation.from_doc_id,
-                            to_doc_id=candidate.id,
-                            raw_text=citation.raw_text,
-                            normalized_key=citation.normalized_key,
-                            reporter=citation.reporter,
-                            volume=citation.volume,
-                            page=citation.page,
-                            year=citation.year,
-                            page_number=citation.page_number,
-                            span_start=citation.span_start,
-                            span_end=citation.span_end,
-                            confidence=max(citation.confidence - 0.2, 0.1),
-                            resolution_notes=f'["Multiple candidates ({len(candidates)}), network connection"]'
-                        )
-                        db.add(additional_citation)
-                        linked_count += 1
-                
-                # Set primary link to first candidate
-                citation.to_doc_id = candidates[0].id
-                citation.confidence = max(citation.confidence - 0.2, 0.1)
-                citation.resolution_notes = f'["Multiple candidates ({len(candidates)}), primary connection"]'
-                linked_count += 1
-            
-            # If no candidates, try fuzzy matching for potential connections
-            if not candidates:
-                fuzzy_candidates = self._find_fuzzy_citations(db, citation)
-                if fuzzy_candidates:
-                    # Create lower confidence connections for fuzzy matches
-                    for candidate in fuzzy_candidates:
-                        fuzzy_citation = CitationModel(
-                            from_doc_id=citation.from_doc_id,
-                            to_doc_id=candidate.id,
-                            raw_text=citation.raw_text,
-                            normalized_key=citation.normalized_key,
-                            reporter=citation.reporter,
-                            volume=citation.volume,
-                            page=citation.page,
-                            year=citation.year,
-                            page_number=citation.page_number,
-                            span_start=citation.span_start,
-                            span_end=citation.span_end,
-                            confidence=0.3,  # Lower confidence for fuzzy matches
-                            resolution_notes='["Fuzzy citation match - potential connection"]'
-                        )
-                        db.add(fuzzy_citation)
-                        linked_count += 1
-        
-        db.commit()
-        
-        self.logger.info("Enhanced citation linking completed", 
-                        total_links_created=linked_count,
-                        documents_processed=len(all_documents))
-        return linked_count
-    
-    def _find_fuzzy_citations(self, db: Session, citation: CitationModel) -> List[DocumentModel]:
-        """Find potential fuzzy matches for citations"""
-        candidates = []
-        
-        if citation.reporter:
-            # Look for documents with same reporter but different volume/page
-            similar_citations = db.query(DocumentModel).join(CitationModel).filter(
-                CitationModel.reporter == citation.reporter,
-                CitationModel.from_doc_id != citation.from_doc_id
-            ).all()
-            
-            for doc in similar_citations:
-                # Check if this document has citations that might be related
-                doc_citations = db.query(CitationModel).filter(
-                    CitationModel.from_doc_id == doc.id
-                ).all()
-                
-                for doc_citation in doc_citations:
-                    # If both citations reference the same case type, create connection
-                    if (doc_citation.reporter == citation.reporter and 
-                        doc_citation.volume and citation.volume and
-                        abs(doc_citation.volume - citation.volume) <= 10):  # Within 10 volumes
-                        candidates.append(doc)
-                        break
-        
-        return list(set(candidates))  # Remove duplicates
-    
+                DocumentModel.id != citation.from_doc_id,
+            )
+            .distinct()
+            .all()
+        )
+        return rows
+
+    @staticmethod
+    def _apply_match(
+        citation: CitationModel,
+        document: DocumentModel,
+        boost: float,
+        note: str,
+    ) -> None:
+        citation.to_doc_id = document.id
+        citation.confidence = min(citation.confidence + boost, 1.0)
+        citation.resolution_notes = json.dumps([note])
+        breakdown = dict(citation.confidence_breakdown or {})
+        breakdown["match_boost"] = boost
+        citation.confidence_breakdown = breakdown
+
+    # ---- Batch ingestion -----------------------------------------------------
+
     def process_all_documents(self) -> Dict:
-        """Process all documents that haven't been processed yet"""
         db = SessionLocal()
         try:
-            # First, add any new PDFs from the data/pdfs folder
-            pdf_storage_path = os.getenv("PDF_STORAGE_PATH", "./data/pdfs")
-            if os.path.exists(pdf_storage_path):
-                pdf_files = [f for f in os.listdir(pdf_storage_path) if f.lower().endswith('.pdf')]
-                
-                for pdf_file in pdf_files:
-                    file_path = os.path.join(pdf_storage_path, pdf_file)
-                    
-                    # Check if already in database
-                    with open(file_path, "rb") as f:
-                        content = f.read()
-                        fingerprint = hashlib.sha256(content).hexdigest()
-                    
-                    existing_doc = db.query(DocumentModel).filter(DocumentModel.fingerprint == fingerprint).first()
-                    if not existing_doc:
-                        # Add new PDF to database
-                        document = DocumentModel(
-                            title=self._extract_document_title(file_path),
-                            fingerprint=fingerprint,
-                            source_path=file_path
-                        )
-                        db.add(document)
-                        db.commit()
-                        db.refresh(document)
-                        self.logger.info("Added new PDF to database", filename=pdf_file, doc_id=document.id)
-            
-            # Find documents without citations
-            unprocessed_docs = db.query(DocumentModel).filter(
-                ~DocumentModel.citations_from.any()
-            ).all()
-            
+            self._register_pdfs_from_disk(db)
+
+            unprocessed = (
+                db.query(DocumentModel)
+                .filter(~DocumentModel.citations_from.any())
+                .all()
+            )
+
             results = []
-            for doc in unprocessed_docs:
+            for doc in unprocessed:
                 try:
-                    result = self.process_document(doc.id)
-                    results.append(result)
+                    results.append(self.process_document(doc.id))
                 except Exception as e:
-                    self.logger.error("Failed to process document", 
-                                    doc_id=doc.id, error=str(e))
-                    results.append({
-                        "document_id": doc.id,
-                        "processing_status": "failed",
-                        "error": str(e)
-                    })
-            
+                    self.logger.error("Failed to process document", doc_id=doc.id, error=str(e))
+                    results.append(
+                        {"document_id": doc.id, "processing_status": "failed", "error": str(e)}
+                    )
+
             summary = {
-                "total_documents": len(unprocessed_docs),
-                "processed": len([r for r in results if r.get("processing_status") == "completed"]),
-                "failed": len([r for r in results if r.get("processing_status") == "failed"]),
-                "results": results
+                "total_documents": len(unprocessed),
+                "processed": sum(1 for r in results if r.get("processing_status") == "completed"),
+                "failed": sum(1 for r in results if r.get("processing_status") == "failed"),
+                "results": results,
             }
-            
             self.logger.info("Batch processing completed", **summary)
             return summary
-            
         finally:
             db.close()
 
+    def _register_pdfs_from_disk(self, db: Session) -> None:
+        path = settings.pdf_storage_path
+        if not os.path.exists(path):
+            return
+        for filename in os.listdir(path):
+            if not filename.lower().endswith(".pdf"):
+                continue
+            file_path = os.path.join(path, filename)
+            with open(file_path, "rb") as f:
+                fingerprint = hashlib.sha256(f.read()).hexdigest()
+            existing = (
+                db.query(DocumentModel)
+                .filter(DocumentModel.fingerprint == fingerprint)
+                .first()
+            )
+            if existing is not None:
+                continue
+            document = DocumentModel(
+                title=self._extract_document_title(file_path),
+                fingerprint=fingerprint,
+                source_path=file_path,
+            )
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+            self.logger.info(
+                "Registered new PDF", filename=filename, doc_id=document.id
+            )

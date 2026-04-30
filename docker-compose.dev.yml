@@ -1,28 +1,91 @@
-version: '3.8'
+# Development stack — pgvector postgres + redis + hot-reload backend + worker.
 
 services:
-  # Backend API Service (Development)
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: legal-citation-graph-db-dev
+    environment:
+      POSTGRES_DB: citations
+      POSTGRES_USER: citations
+      POSTGRES_PASSWORD: citations
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citations -d citations"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: legal-citation-graph-redis-dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: legal-citation-graph-backend-dev
+    command: >
+      bash -lc "alembic upgrade head &&
+                python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
-      - DATABASE_URL=sqlite:///./data/citations.db
-      - PDF_STORAGE_PATH=./data/pdfs
-      - FEATURE_EXTERNAL_ENRICHMENT=false
-      - MODEL_PROVIDER=openai
-      - LOG_LEVEL=DEBUG
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      CORS_ORIGINS: http://localhost:3000
+      LOG_LEVEL: DEBUG
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
       - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
-    command: ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-  # Frontend Service (Development)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legal-citation-graph-worker-dev
+    command: arq backend.workers.WorkerSettings
+    environment:
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+      - ./backend:/app/backend
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    # Auto-recover if a single embed_document_job hits a transient torch/
+    # NumPy edge case; ARQ will pick the next pending job up cleanly.
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
@@ -31,7 +94,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/v1
+      - NEXT_PUBLIC_API_URL=http://localhost:8001/v1
       - NODE_ENV=development
     volumes:
       - ./frontend:/app
@@ -39,13 +102,41 @@ services:
       - /app/.next
     depends_on:
       - backend
-    restart: unless-stopped
-    command: ["npm", "run", "dev"]
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legal-citation-graph-seed
+    profiles: ["seed"]
+    command: python scripts/seed.py --count 200 --court scotus
+    environment:
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      LOG_LEVEL: INFO
+      FEATURE_EXTERNAL_ENRICHMENT: "true"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+      - ./scripts:/app/scripts
+      # Bind-mount backend/ so seed.py picks up backend.courtlistener
+      # changes (and any other live edits) without rebuilding the image.
+      - ./backend:/app/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
 volumes:
+  pgdata_dev:
   data:
+  hf_cache:
 
 networks:
   default:
     name: legal-citation-graph-dev-network
-

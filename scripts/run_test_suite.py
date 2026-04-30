@@ -254,11 +254,11 @@ class TestRunner:
             return False
         print("[PASS] tests directory found")
         
-        # Check health check script
-        if not Path("health_check.py").exists():
-            print("[FAIL] health_check.py not found")
+        # Check health check script (relocated to scripts/ as part of repo cleanup)
+        if not Path("scripts/health_check.py").exists():
+            print("[FAIL] scripts/health_check.py not found")
             return False
-        print("[PASS] health_check.py found")
+        print("[PASS] scripts/health_check.py found")
         
         return True
 

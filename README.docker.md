@@ -14,8 +14,8 @@ This guide covers deploying the Legal Citation Graph application using Docker co
 
 ```bash
 # Deploy development environment
-./deploy.sh dev          # Linux/Mac
-.\deploy.ps1 dev         # Windows PowerShell
+./scripts/deploy.sh dev          # Linux/Mac
+.\scripts\deploy.ps1 dev         # Windows PowerShell
 
 # Or use Docker Compose directly
 docker-compose -f docker-compose.dev.yml up --build -d
@@ -30,8 +30,8 @@ docker-compose -f docker-compose.dev.yml up --build -d
 
 ```bash
 # Deploy with Nginx reverse proxy
-./deploy.sh local        # Linux/Mac
-.\deploy.ps1 local       # Windows PowerShell
+./scripts/deploy.sh local        # Linux/Mac
+.\scripts\deploy.ps1 local       # Windows PowerShell
 
 # Or use Docker Compose directly
 docker-compose up --build -d
@@ -186,18 +186,18 @@ services:
 
 ```bash
 # Linux/Mac
-./deploy.sh help          # Show all commands
-./deploy.sh status        # Show service status
-./deploy.sh logs dev      # Show development logs
-./deploy.sh stop          # Stop all services
-./deploy.sh cleanup       # Clean up Docker resources
+./scripts/deploy.sh help          # Show all commands
+./scripts/deploy.sh status        # Show service status
+./scripts/deploy.sh logs dev      # Show development logs
+./scripts/deploy.sh stop          # Stop all services
+./scripts/deploy.sh cleanup       # Clean up Docker resources
 
 # Windows PowerShell
-.\deploy.ps1 help         # Show all commands
-.\deploy.ps1 status       # Show service status
-.\deploy.ps1 logs dev     # Show development logs
-.\deploy.ps1 stop         # Stop all services
-.\deploy.ps1 cleanup      # Clean up Docker resources
+.\scripts\deploy.ps1 help         # Show all commands
+.\scripts\deploy.ps1 status       # Show service status
+.\scripts\deploy.ps1 logs dev     # Show development logs
+.\scripts\deploy.ps1 stop         # Stop all services
+.\scripts\deploy.ps1 cleanup      # Clean up Docker resources
 ```
 
 ### Using Docker Compose Directly
@@ -260,7 +260,7 @@ cp env.example .env
 # Edit .env with production values
 
 # Deploy
-./deploy.sh prod
+./scripts/deploy.sh prod
 ```
 
 #### Kubernetes

@@ -1,0 +1,68 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: citegraph
+      - navigation [ref=e6]:
+        - link "Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+          - generic [ref=e13]: Dashboard
+        - link "Graph" [ref=e14] [cursor=pointer]:
+          - /url: /graph
+          - img [ref=e15]
+          - generic [ref=e20]: Graph
+        - link "Documents" [ref=e21] [cursor=pointer]:
+          - /url: /documents
+          - img [ref=e22]
+          - generic [ref=e25]: Documents
+        - link "Upload" [ref=e26] [cursor=pointer]:
+          - /url: /upload
+          - img [ref=e27]
+          - generic [ref=e30]: Upload
+      - generic [ref=e32]: Press ? for shortcuts
+    - generic [ref=e33]:
+      - banner [ref=e34]:
+        - navigation [ref=e35]:
+          - generic [ref=e37]: Dashboard
+        - search [ref=e39]:
+          - img [ref=e40]
+          - combobox "Semantic search" [ref=e43]
+        - generic [ref=e44]:
+          - button "⌘K" [ref=e45] [cursor=pointer]:
+            - img [ref=e46]
+            - generic [ref=e48]: ⌘K
+          - button "Toggle inspector" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+          - button "Toggle theme" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+      - main [ref=e56]:
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - generic [ref=e60]:
+              - heading "Corpus overview" [level=1] [ref=e61]
+              - paragraph [ref=e62]: Citation extraction status, central cases, and recent ingest activity.
+            - link "Upload PDF" [ref=e63] [cursor=pointer]:
+              - /url: /upload
+              - button "Upload PDF" [ref=e64]:
+                - img [ref=e65]
+                - text: Upload PDF
+          - generic [ref=e73]:
+            - generic [ref=e74]:
+              - generic [ref=e75]:
+                - heading "Most central cases" [level=2] [ref=e76]
+                - link "Open graph" [ref=e77] [cursor=pointer]:
+                  - /url: /graph
+                  - text: Open graph
+                  - img [ref=e78]
+              - generic [ref=e81]: No centrality data yet. Add more citing documents.
+            - generic [ref=e82]:
+              - generic [ref=e83]:
+                - heading "Recent uploads" [level=2] [ref=e84]
+                - link "All" [ref=e85] [cursor=pointer]:
+                  - /url: /documents
+                  - text: All
+                  - img [ref=e86]
+              - generic [ref=e89]: No documents yet.
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e90]

@@ -1,110 +1,87 @@
 """
-PDF text extraction service using pdfplumber
+PDF text extraction using PyMuPDF (fitz).
+
+Returns the full document text plus a list of page spans so downstream
+consumers (eyecite, the citation parser) can operate on a single string
+while still resolving character offsets back to source page numbers.
 """
-import pdfplumber
-import structlog
-from typing import Dict, List, Any
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass
+from typing import List, Tuple
+
+import fitz  # PyMuPDF
+import structlog
 
 logger = structlog.get_logger()
 
+
+@dataclass
+class PageSpan:
+    """One page's text plus its char offset within the full-document string."""
+
+    page_number: int
+    text: str
+    char_offset: int
+
+
 class PDFProcessor:
-    """PDF text extraction service"""
-    
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logger.bind(component="pdf_processor")
-    
-    def process_pdf(self, file_path: str) -> Dict[str, Any]:
-        """
-        Extract text and citation spans from PDF
-        
-        Args:
-            file_path: Path to PDF file
-            
-        Returns:
-            Dictionary with extracted text and metadata
-        """
+
+    def extract_full_text(self, file_path: str) -> Tuple[str, List[PageSpan]]:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF file not found: {file_path}")
-        
-        self.logger.info("Processing PDF", file_path=file_path)
-        
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                total_pages = len(pdf.pages)
-                total_chars = 0
-                page_texts = []
-                citations = []  # Placeholder for citation spans
-                
-                # Extract text from each page
-                for page_num, page in enumerate(pdf.pages):
-                    page_text = page.extract_text()
-                    if page_text:
-                        page_texts.append({
-                            "page_number": page_num + 1,
-                            "text": page_text,
-                            "char_count": len(page_text)
-                        })
-                        total_chars += len(page_text)
-                        
-                        # Simple citation detection (basic regex patterns)
-                        page_citations = self._extract_citations_from_text(
-                            page_text, page_num + 1
-                        )
-                        citations.extend(page_citations)
-                
-                result = {
-                    "total_pages": total_pages,
-                    "total_chars": total_chars,
-                    "page_texts": page_texts,
-                    "citations": citations,
-                    "processing_status": "completed"
-                }
-                
-                self.logger.info("PDF processing completed", 
-                               file_path=file_path,
-                               pages=total_pages,
-                               chars=total_chars,
-                               citations_found=len(citations))
-                
-                return result
-                
-        except Exception as e:
-            self.logger.error("PDF processing failed", 
-                            file_path=file_path,
-                            error=str(e))
-            raise
-    
-    def _extract_citations_from_text(self, text: str, page_number: int) -> List[Dict]:
-        """
-        Basic citation extraction using regex patterns
-        This is a simplified version - in production you'd use eyecite
-        """
-        import re
-        
-        citations = []
-        
-        # Basic patterns for legal citations
-        patterns = [
-            # U.S. Supreme Court: 123 U.S. 456
-            r'(\d+)\s+U\.S\.\s+(\d+)',
-            # Federal Reporter: 123 F.2d 456
-            r'(\d+)\s+F\.(?:2d|3d|4d)?\s+(\d+)',
-            # State cases: 123 N.E.2d 456
-            r'(\d+)\s+[A-Z]{2}\.?\s+(?:2d|3d)?\s+(\d+)',
-        ]
-        
-        for pattern in patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
-                citation = {
-                    "raw_text": match.group(0),
-                    "page_number": page_number,
-                    "span_start": match.start(),
-                    "span_end": match.end(),
-                    "confidence": 0.8  # Basic confidence for regex matches
-                }
-                citations.append(citation)
-        
-        return citations
 
+        doc = fitz.open(file_path)
+        full_text_parts: List[str] = []
+        page_spans: List[PageSpan] = []
+        offset = 0
+
+        try:
+            for page_index in range(doc.page_count):
+                page = doc.load_page(page_index)
+                text = page.get_text("text") or ""
+                page_spans.append(
+                    PageSpan(
+                        page_number=page_index + 1,
+                        text=text,
+                        char_offset=offset,
+                    )
+                )
+                full_text_parts.append(text)
+                offset += len(text)
+        finally:
+            doc.close()
+
+        full_text = "".join(full_text_parts)
+        self.logger.info(
+            "Extracted PDF",
+            file_path=file_path,
+            pages=len(page_spans),
+            chars=len(full_text),
+        )
+        return full_text, page_spans
+
+    @staticmethod
+    def resolve_page_number(char_pos: int, page_spans: List[PageSpan]) -> int:
+        """Map a character offset in the full text back to a page number."""
+        if not page_spans:
+            return 1
+        for span in reversed(page_spans):
+            if char_pos >= span.char_offset:
+                return span.page_number
+        return page_spans[0].page_number
+
+    def extract_first_page_text(self, file_path: str) -> str:
+        """Used by title extraction; returns the first page's plain text."""
+        if not os.path.exists(file_path):
+            return ""
+        doc = fitz.open(file_path)
+        try:
+            if doc.page_count == 0:
+                return ""
+            return doc.load_page(0).get_text("text") or ""
+        finally:
+            doc.close()

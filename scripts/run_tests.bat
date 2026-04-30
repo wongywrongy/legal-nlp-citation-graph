@@ -22,17 +22,17 @@ echo [PASS] Tests directory found
 echo.
 
 echo [INFO] Running Health Check...
-python health_check.py
+python scripts\health_check.py
 echo.
 
 echo [INFO] Running All Tests...
-python tests/run_tests.py
+python -m pytest tests
 echo.
 
 echo [INFO] Test execution complete!
 echo.
 echo [INFO] Tips:
-echo    - Run 'python health_check.py' for quick system verification
+echo    - Run 'python scripts\health_check.py' for quick system verification
 echo    - Run 'pytest tests/ -v' for detailed test output
 echo    - Check the test output above for any failures
 echo.

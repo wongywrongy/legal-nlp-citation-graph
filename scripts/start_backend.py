@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 
 def main():
-    # Ensure we're in the right directory
-    project_root = Path(__file__).parent
+    # Lives in scripts/, so the repo root is one level up.
+    project_root = Path(__file__).resolve().parent.parent
     os.chdir(project_root)
     
     # Check if data directory exists

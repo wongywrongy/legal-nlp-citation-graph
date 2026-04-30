@@ -1,48 +1,133 @@
-version: '3.8'
-
 services:
-  # Backend API Service
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: legal-citation-graph-db
+    environment:
+      POSTGRES_DB: citations
+      POSTGRES_USER: citations
+      POSTGRES_PASSWORD: citations
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citations -d citations"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: legal-citation-graph-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: legal-citation-graph-backend
+    command: >
+      bash -lc "alembic upgrade head &&
+                python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
-      - DATABASE_URL=sqlite:///./data/citations.db
-      - PDF_STORAGE_PATH=./data/pdfs
-      - FEATURE_EXTERNAL_ENRICHMENT=false
-      - MODEL_PROVIDER=openai
-      - LOG_LEVEL=INFO
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      CORS_ORIGINS: http://localhost:3000
+      LOG_LEVEL: INFO
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Frontend Service
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legal-citation-graph-worker
+    command: arq backend.workers.WorkerSettings
+    environment:
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legal-citation-graph-seed
+    profiles: ["seed"]
+    command: python scripts/seed.py --count 200 --court scotus
+    environment:
+      DATABASE_URL: postgresql+asyncpg://citations:citations@db:5432/citations
+      DATABASE_URL_SYNC: postgresql+psycopg2://citations:citations@db:5432/citations
+      REDIS_URL: redis://redis:6379
+      PDF_STORAGE_PATH: /app/data/pdfs
+      LOG_LEVEL: INFO
+      FEATURE_EXTERNAL_ENRICHMENT: "true"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* must be passed at *build* time — Next.js inlines
+        # them into the bundle. The runtime `environment` block below is
+        # kept only because Next reads NODE_ENV at runtime.
+        NEXT_PUBLIC_API_URL: http://localhost:8001/v1
     container_name: legal-citation-graph-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/v1
       - NODE_ENV=production
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
 
-  # Nginx Reverse Proxy (for production-like setup)
   nginx:
     image: nginx:alpine
     container_name: legal-citation-graph-nginx
@@ -58,7 +143,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  pgdata:
   data:
+  hf_cache:
 
 networks:
   default:

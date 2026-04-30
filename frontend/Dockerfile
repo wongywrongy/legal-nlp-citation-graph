@@ -6,11 +6,19 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all deps (including dev) — Next.js's build needs TypeScript and
+# the rest of the dev tooling. Production-only install lands in the runner
+# stage via the `next build --output=standalone` artifact.
+RUN npm ci
 
 # Copy source code
 COPY . .
+
+# NEXT_PUBLIC_* env vars are baked at build time, not read at runtime.
+# Override via `docker compose build --build-arg NEXT_PUBLIC_API_URL=...`
+# or set the build arg in compose.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8001/v1
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Build the application
 RUN npm run build

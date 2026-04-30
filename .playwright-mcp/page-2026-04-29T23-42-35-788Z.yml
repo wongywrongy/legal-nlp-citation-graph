@@ -1,0 +1,95 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: citegraph
+      - navigation [ref=e6]:
+        - link "Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+          - generic [ref=e13]: Dashboard
+        - link "Graph" [ref=e14] [cursor=pointer]:
+          - /url: /graph
+          - img [ref=e15]
+          - generic [ref=e20]: Graph
+        - link "Documents" [ref=e21] [cursor=pointer]:
+          - /url: /documents
+          - img [ref=e22]
+          - generic [ref=e25]: Documents
+        - link "Upload" [ref=e26] [cursor=pointer]:
+          - /url: /upload
+          - img [ref=e27]
+          - generic [ref=e30]: Upload
+      - generic [ref=e32]: Press ? for shortcuts
+    - generic [ref=e33]:
+      - banner [ref=e34]:
+        - navigation [ref=e35]:
+          - link "Dashboard" [ref=e37] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e38]:
+            - img [ref=e39]
+            - generic [ref=e41]: Documents
+        - search [ref=e43]:
+          - img [ref=e44]
+          - combobox "Semantic search" [ref=e47]
+        - generic [ref=e48]:
+          - button "⌘K" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+            - generic [ref=e52]: ⌘K
+          - button "Toggle inspector" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+          - button "Toggle theme" [ref=e57] [cursor=pointer]:
+            - img [ref=e58]
+      - main [ref=e60]:
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - heading "Documents" [level=1] [ref=e65]
+              - paragraph [ref=e66]: Loading…
+            - generic [ref=e67]:
+              - textbox "Filter by title, court, docket…" [ref=e68]
+              - button "Upload" [ref=e69] [cursor=pointer]:
+                - img [ref=e70]
+                - text: Upload
+          - table [ref=e75]:
+            - rowgroup [ref=e76]:
+              - row "Title Court Year Cited by Cites Added" [ref=e77]:
+                - columnheader "Title" [ref=e78] [cursor=pointer]:
+                  - generic [ref=e79]:
+                    - text: Title
+                    - img [ref=e80]
+                - columnheader "Court" [ref=e83] [cursor=pointer]:
+                  - generic [ref=e84]:
+                    - text: Court
+                    - img [ref=e85]
+                - columnheader "Year" [ref=e88] [cursor=pointer]:
+                  - generic [ref=e89]:
+                    - text: Year
+                    - img [ref=e90]
+                - columnheader "Cited by" [ref=e93] [cursor=pointer]:
+                  - generic [ref=e94]:
+                    - text: Cited by
+                    - img [ref=e95]
+                - columnheader "Cites" [ref=e98] [cursor=pointer]:
+                  - generic [ref=e99]:
+                    - text: Cites
+                    - img [ref=e100]
+                - columnheader "Added" [ref=e103] [cursor=pointer]:
+                  - generic [ref=e104]:
+                    - text: Added
+                    - img [ref=e105]
+            - rowgroup [ref=e107]:
+              - row [ref=e108]:
+                - cell [ref=e109]
+              - row [ref=e111]:
+                - cell [ref=e112]
+              - row [ref=e114]:
+                - cell [ref=e115]
+              - row [ref=e117]:
+                - cell [ref=e118]
+              - row [ref=e120]:
+                - cell [ref=e121]
+              - row [ref=e123]:
+                - cell [ref=e124]
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e126]
