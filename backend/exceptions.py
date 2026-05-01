@@ -32,6 +32,25 @@ class BadInputError(AppError):
     status_code = 400
 
 
+class ExtractionFailedError(Exception):
+    """PDF extraction produced too little text to be useful.
+
+    Raised by document_processor when the PDF's stripped body is below
+    `_MIN_BODY_CHARS`. The processor flips `documents.status =
+    'extraction_failed'` and the worker chain (process_pdf_job) detects
+    that flag and skips embedding + enrichment. NOT an AppError because
+    this isn't a user-facing HTTP error — it's an internal pipeline
+    signal between the processor and the worker.
+    """
+
+    def __init__(self, document_id: str, chars: int):
+        super().__init__(
+            f"Extraction failed for {document_id}: only {chars} chars of body text"
+        )
+        self.document_id = document_id
+        self.chars = chars
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error_handler(_request: Request, exc: AppError):

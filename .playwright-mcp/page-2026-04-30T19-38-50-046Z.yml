@@ -1,0 +1,84 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: citegraph
+      - navigation [ref=e6]:
+        - link "Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+          - generic [ref=e13]: Dashboard
+        - link "Graph" [ref=e14] [cursor=pointer]:
+          - /url: /graph
+          - img [ref=e15]
+          - generic [ref=e20]: Graph
+        - link "Documents" [ref=e21] [cursor=pointer]:
+          - /url: /documents
+          - img [ref=e22]
+          - generic [ref=e25]: Documents
+        - link "Upload" [ref=e26] [cursor=pointer]:
+          - /url: /upload
+          - img [ref=e27]
+          - generic [ref=e30]: Upload
+      - generic [ref=e32]: Press ? for shortcuts
+    - generic [ref=e33]:
+      - banner [ref=e34]:
+        - navigation [ref=e35]:
+          - link "Dashboard" [ref=e37] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e38]:
+            - img [ref=e39]
+            - generic [ref=e41]: Graph
+        - search [ref=e43]:
+          - img [ref=e44]
+          - combobox "Semantic search" [ref=e47]
+        - generic [ref=e48]:
+          - button "⌘K" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+            - generic [ref=e52]: ⌘K
+          - button "Toggle inspector" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+          - button "Toggle theme" [active] [ref=e57] [cursor=pointer]:
+            - img [ref=e126]
+      - main [ref=e60]:
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - generic [ref=e65]:
+              - generic [ref=e66]:
+                - img [ref=e67]
+                - generic [ref=e69]: "333"
+                - generic [ref=e70]: citation
+              - generic [ref=e71]: ·
+              - generic [ref=e72]:
+                - img [ref=e73]
+                - generic [ref=e75]: "59"
+                - generic [ref=e76]: similar
+            - generic [ref=e77]:
+              - generic [ref=e78]:
+                - generic [ref=e79]:
+                  - generic [ref=e80]: Similarity threshold
+                  - generic [ref=e81]: "0.85"
+                - generic [ref=e83]:
+                  - generic [ref=e84]: Fewer
+                  - generic "Semantic similarity threshold" [ref=e86]:
+                    - slider [ref=e90]
+                  - generic [ref=e91]: More
+              - button "Filters" [ref=e92] [cursor=pointer]:
+                - img [ref=e93]
+                - text: Filters
+          - generic [ref=e94]:
+            - button "Fit graph to view" [ref=e98] [cursor=pointer]: Fit view
+            - generic [ref=e110]:
+              - generic [ref=e112]: Timeline
+              - generic [ref=e118]: "2024"
+              - generic "Filter cases by year" [ref=e121]:
+                - slider "Minimum" [ref=e125]
+            - generic "Graph edge legend":
+              - generic:
+                - img
+                - generic: Citation
+              - generic:
+                - img
+                - generic: Semantic similarity
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e96]

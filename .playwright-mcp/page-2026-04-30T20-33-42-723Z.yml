@@ -1,0 +1,60 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: citegraph
+      - navigation [ref=e6]:
+        - link "Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+          - generic [ref=e13]: Dashboard
+        - link "Graph" [ref=e14] [cursor=pointer]:
+          - /url: /graph
+          - img [ref=e15]
+          - generic [ref=e20]: Graph
+        - link "Documents" [ref=e21] [cursor=pointer]:
+          - /url: /documents
+          - img [ref=e22]
+          - generic [ref=e25]: Documents
+        - link "Upload" [ref=e26] [cursor=pointer]:
+          - /url: /upload
+          - img [ref=e27]
+          - generic [ref=e30]: Upload
+      - generic [ref=e32]: Press ? for shortcuts
+    - generic [ref=e33]:
+      - banner [ref=e34]:
+        - navigation [ref=e35]:
+          - generic [ref=e37]: Dashboard
+        - search [ref=e39]:
+          - img [ref=e40]
+          - combobox "Semantic search" [ref=e43]
+        - generic [ref=e44]:
+          - button "⌘K" [ref=e45] [cursor=pointer]:
+            - img [ref=e46]
+            - generic [ref=e48]: ⌘K
+          - button "Toggle inspector" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+          - button "Toggle theme" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+      - main [ref=e56]:
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - heading "Understand any case" [level=1] [ref=e60]
+            - paragraph [ref=e61]: Search by name or upload a PDF to explore its citation network.
+          - generic [ref=e62]:
+            - generic [ref=e63]:
+              - generic [ref=e64]: Search a case name
+              - generic [ref=e65]:
+                - img [ref=e66]
+                - combobox "Search a case name" [ref=e69]
+              - paragraph [ref=e70]: Live search via CourtListener
+            - generic [ref=e72]: or
+            - button "Upload a PDF" [ref=e73] [cursor=pointer]:
+              - img [ref=e74]
+              - generic [ref=e77]: Upload a PDF…
+              - generic [ref=e78]: drop or click
+          - link "Or explore the full corpus" [ref=e79] [cursor=pointer]:
+            - /url: /graph
+            - text: Or explore the full corpus
+            - img [ref=e80]
+  - region "Notifications (F8)":
+    - list

@@ -2,8 +2,13 @@
 eyecite==2.6.9
 reporters-db==3.2.58
 
-# PDF extraction — PyMuPDF replaces pdfplumber (faster, better span data)
+# PDF extraction — pymupdf4llm wraps PyMuPDF and uses its layout GNN to
+# produce structured Markdown with body/footnote separation, automatic
+# OCR fallback, and seamless page handling. Native PDFs run in ~120 ms.
+# PyMuPDF stays as a transitive dep + is still used by scripts/seed.py
+# for synthesising opinions that lack a download_url.
 PyMuPDF==1.24.10
+pymupdf4llm==0.0.17
 
 # API + async runtime
 fastapi==0.110.0

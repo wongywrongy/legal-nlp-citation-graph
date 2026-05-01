@@ -215,3 +215,66 @@ class CitationOutgoing(BaseModel):
     external_year: Optional[int] = None
     external_court: Optional[str] = None
     external_url: Optional[str] = None
+
+
+# --- Track B: neighborhood graph + CourtListener entry-point shapes -------
+
+
+class NeighborhoodNodeData(BaseModel):
+    """One node in a neighborhood graph response.
+
+    Distinct shape from the corpus `GraphNode` (see /v1/graph) so both
+    response types can evolve independently. Track B's neighborhood
+    payload pins `focal=true` on the case the user is exploring; the
+    frontend reads that flag to render the focal node larger + with a
+    border ring.
+
+    `status` surfaces Track A's `documents.status` value so the graph
+    page can show the "Extracting citations…" status bar without an
+    extra round-trip.
+    """
+
+    id: str
+    title: str
+    court: Optional[str] = None
+    year: Optional[int] = None
+    size: int = 1
+    color: Optional[str] = None
+    focal: bool = False
+    status: Optional[str] = None
+
+
+class NeighborhoodCitationEdge(BaseModel):
+    source: str
+    target: str
+    confidence: float
+    citation_type: str = "full"
+
+
+class NeighborhoodSemanticEdge(BaseModel):
+    source: str
+    target: str
+    similarity_score: float
+
+
+class NeighborhoodGraph(BaseModel):
+    focal_id: str
+    nodes: List[NeighborhoodNodeData]
+    citation_edges: List[NeighborhoodCitationEdge]
+    semantic_edges: List[NeighborhoodSemanticEdge]
+
+
+class CourtListenerHit(BaseModel):
+    """A single hit from `/v1/courtlistener/search`.
+
+    Maps the relevant subset of CourtListener's /api/search/?type=o
+    response so the frontend dropdown has just what it needs to render
+    + ingest. `cl_id` is the cluster id the ingest endpoint uses.
+    """
+
+    cl_id: int
+    case_name: str
+    court: Optional[str] = None
+    year: Optional[int] = None
+    citation_string: Optional[str] = None
+    absolute_url: str

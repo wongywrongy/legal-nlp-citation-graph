@@ -22,20 +22,42 @@ import {
   useSetSettings,
   useSigma,
 } from '@react-sigma/core';
-import '@react-sigma/core/lib/react-sigma.min.css';
+// @react-sigma 5.x renamed the published CSS asset to `lib/style.css`
+// (the v3 path `lib/react-sigma.min.css` is no longer in the package
+// `exports` field). The brief's instruction was upside-down for 5.x.
+import '@react-sigma/core/lib/style.css';
 import Graph, { MultiDirectedGraph } from 'graphology';
 import {
   graphApi,
+  neighborhoodApi,
   searchApi,
   GraphFilters,
   GraphResponse,
+  NeighborhoodGraph,
   SimilarityEdge,
 } from '@/lib/api';
 import { useInspector } from '@/lib/inspector-store';
 import { useGraphFocus, SPAWN_DURATION_MS } from '@/lib/graph-store';
-import { buildSigmaGraph, runFa2Worker } from '@/lib/graph-data';
-import DashedEdgeProgram from '@/lib/sigma-dashed-edge';
+import { createEdgeCurveProgram } from '@sigma/edge-curve';
+import { bindWebGLLayer } from '@sigma/layer-webgl';
+import {
+  buildNeighborhoodGraph,
+  buildSigmaGraph,
+  mergeExpansion,
+  runFa2Worker,
+} from '@/lib/graph-data';
+import GlowLayerProgram, { glowState, hexToRgbFloat } from '@/lib/sigma-glow-layer';
+import { drawLabelPill } from '@/lib/sigma-label-renderer';
+import TaperedEdgeProgram from '@/lib/sigma-tapered-edge';
 import { cn } from '@/lib/utils';
+
+// Curved edge program for semantic-similarity edges. Built once at module
+// load (Sigma stores the class, not instances). `arrowHead: null` keeps
+// these undirected — they encode resemblance, not flow.
+const CurvedSemanticEdgeProgram = createEdgeCurveProgram({
+  arrowHead: null,
+  curvatureAttribute: 'curvature',
+});
 
 const PERFORMANCE_WARN_NODES = 1500;
 // Edges fade across this similarity window around the threshold (so an
@@ -63,6 +85,18 @@ interface CitationGraphProps {
    *  parent can use this to coordinate other animations (e.g. expand the
    *  inspector panel only after the canvas has settled). */
   onLayoutComplete?: () => void;
+  /** Track B — when set, the canvas runs neighborhood mode: fetches
+   *  /v1/neighborhood/{focusId} instead of /v1/graph and renders a
+   *  focal-centred subgraph. Existing pulse/trail/constellation/year
+   *  effects all continue to work. */
+  focusId?: string | null;
+  /** Track B — pre-computed list of expansion ids the user has applied
+   *  (mirrored to URL ?expanded=). The graph fetches each one's
+   *  expansion diff and merges in. */
+  expansionIds?: string[];
+  /** Track B — fires when the focal doc's status transitions to
+   *  'completed' or 'failed'. Used by the graph page status bar. */
+  onFocalStatus?: (status: string | null, citationsCount: number) => void;
 }
 
 export default function CitationGraph({
@@ -71,19 +105,29 @@ export default function CitationGraph({
   onCounts,
   onYears,
   onLayoutComplete,
+  focusId = null,
+  expansionIds,
+  onFocalStatus,
 }: CitationGraphProps) {
   const [citationGraph, setCitationGraph] = useState<GraphResponse | null>(null);
   const [semanticEdges, setSemanticEdges] = useState<SimilarityEdge[]>([]);
+  const [neighborhoodPayload, setNeighborhoodPayload] =
+    useState<NeighborhoodGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
+  const mode: 'corpus' | 'neighborhood' = focusId ? 'neighborhood' : 'corpus';
+
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
 
+  // ---- Corpus mode fetch (existing behaviour) -----------------------------
   useEffect(() => {
+    if (mode !== 'corpus') return;
     let mounted = true;
     setLoading(true);
     setError(null);
+    setNeighborhoodPayload(null);
     // Fetch similarity edges with a floor 15pt below the current threshold,
     // capped at 800 edges. Default threshold is 0.85, so we get edges ≥0.70
     // by default — the slider can drop to 0.70 without a refetch. Going
@@ -115,15 +159,99 @@ export default function CitationGraph({
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersKey]);
+  }, [filtersKey, mode]);
+
+  // ---- Neighborhood mode fetch (Track B) ---------------------------------
+  useEffect(() => {
+    if (mode !== 'neighborhood' || !focusId) return;
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    setCitationGraph(null);
+    setSemanticEdges([]);
+    neighborhoodApi
+      .get(focusId, 1)
+      .then((nb) => {
+        if (!mounted) return;
+        setNeighborhoodPayload(nb);
+        if (onYears) {
+          const years = nb.nodes
+            .map((n) => n.year)
+            .filter((y): y is number => typeof y === 'number');
+          onYears(years);
+        }
+        const focalNode = nb.nodes.find((n) => n.focal);
+        if (focalNode && onFocalStatus) {
+          onFocalStatus(focalNode.status ?? null, nb.citation_edges.length);
+        }
+      })
+      .catch(
+        (e) =>
+          mounted &&
+          setError(
+            e instanceof Error ? e.message : 'Failed to load neighborhood',
+          ),
+      )
+      .finally(() => mounted && setLoading(false));
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, mode]);
 
   // Build graph WITHOUT threshold filtering — render-time fade handles it.
   // semanticThreshold is intentionally excluded from the deps so the
   // threshold slider doesn't trigger an O(n²) layout recomputation.
   const graph = useMemo(() => {
+    if (mode === 'neighborhood') {
+      if (!neighborhoodPayload) return null;
+      return buildNeighborhoodGraph(neighborhoodPayload);
+    }
     if (!citationGraph) return null;
     return buildSigmaGraph(citationGraph, semanticEdges, { semanticThreshold: 0 });
-  }, [citationGraph, semanticEdges]);
+  }, [mode, citationGraph, semanticEdges, neighborhoodPayload]);
+
+  // ---- Expansion merge (neighborhood mode only) --------------------------
+  // When the parent passes a non-empty expansionIds, fetch each id's
+  // diff and mergeExpansion into the live graph. We do this serially
+  // because each expansion calls /expand with the previous expansion's
+  // ids in the exclude list — order matters for de-dup.
+  const appliedExpansionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (mode !== 'neighborhood' || !graph || !focusId) return;
+    const wanted = expansionIds ?? [];
+    const applied = appliedExpansionsRef.current;
+
+    // Reset bookkeeping when the focal changes.
+    if (graph.order > 0 && !applied.has(`@focal:${focusId}`)) {
+      applied.clear();
+      applied.add(`@focal:${focusId}`);
+    }
+
+    const pending = wanted.filter((id) => !applied.has(id));
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const id of pending) {
+        if (cancelled) break;
+        try {
+          const exclude = graph.nodes();
+          const diff = await neighborhoodApi.expand(id, exclude, 1);
+          if (cancelled) break;
+          mergeExpansion(graph, diff);
+          applied.add(id);
+        } catch {
+          // Surface as silent failure for now — the badge in the URL
+          // remains so the user can retry by reloading.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, focusId, expansionIds, graph]);
 
   // FA2 layout runs on a web worker so the UI shell stays responsive
   // (sliders, scrolling, the inspector animations all keep moving while
@@ -157,6 +285,19 @@ export default function CitationGraph({
 
   useEffect(() => {
     if (!graph || !onCounts) return;
+    if (mode === 'neighborhood' && neighborhoodPayload) {
+      const semCount = neighborhoodPayload.semantic_edges.filter(
+        (e) => e.similarity_score >= semanticThreshold,
+      ).length;
+      const citationCount = neighborhoodPayload.citation_edges.length;
+      onCounts({
+        visibleEdges: graph.size,
+        totalEdges: citationCount + neighborhoodPayload.semantic_edges.length,
+        citationEdges: citationCount,
+        semanticEdges: semCount,
+      });
+      return;
+    }
     const visibleSemantic = semanticEdges.filter(
       (e) => e.similarity_score >= semanticThreshold,
     ).length;
@@ -167,7 +308,15 @@ export default function CitationGraph({
       citationEdges: citationCount,
       semanticEdges: visibleSemantic,
     });
-  }, [graph, citationGraph, semanticEdges, semanticThreshold, onCounts]);
+  }, [
+    mode,
+    graph,
+    citationGraph,
+    neighborhoodPayload,
+    semanticEdges,
+    semanticThreshold,
+    onCounts,
+  ]);
 
   if (loading) {
     return (
@@ -249,6 +398,17 @@ export default function CitationGraph({
         graph={MultiDirectedGraph}
         style={{ width: '100%', height: '100%', background: 'transparent' }}
         settings={{
+          // Sigma 3 / @react-sigma 5 changed several setting defaults:
+          //   - `allowInvalidContainer: true` is no longer the default,
+          //     but App-shell mounts the canvas behind a transition that
+          //     briefly produces an invalid container size; without this
+          //     toggle Sigma throws on first paint.
+          //   - `enableEdgeClickEvents` (was `enableEdgeEvents`) is the
+          //     correct name for the click handler we register below.
+          //   - `nodeProgramClasses` / `edgeProgramClasses` are merged with
+          //     the built-in defaults automatically — we register only
+          //     what we add ourselves (tapered + curved, see graph-data).
+          allowInvalidContainer: true,
           renderEdgeLabels: false,
           defaultEdgeColor: '#94a3b8',
           defaultNodeColor: '#64748b',
@@ -261,13 +421,22 @@ export default function CitationGraph({
             graph.order >= 200 ? 12 : graph.order >= 100 ? 8 : 5,
           hideEdgesOnMove: true,
           hideLabelsOnMove: true,
-          enableEdgeEvents: false,
-          // Register the dashed-edge program. Citation edges keep using
-          // sigma's built-in 'arrow' / 'line' programs; semantic edges set
-          // type:'dashed' in graph-data.ts and route through this program.
+          // Sigma 3 keeps the original name `enableEdgeEvents`. The
+          // brief's "enableEdgeClickEvents" rename does not match the
+          // shipping settings.d.ts; using the wrong name produces a
+          // TS2561.
+          enableEdgeEvents: true,
+          // Sigma 3 merges these classes with the built-in defaults
+          // automatically (circle / arrow / line all stay registered),
+          // so we only declare what we add ourselves.
           edgeProgramClasses: {
-            dashed: DashedEdgeProgram,
+            tapered: TaperedEdgeProgram,
+            curved: CurvedSemanticEdgeProgram,
           },
+          // Sigma 3 setting name is `defaultDrawNodeLabel` (the brief's
+          // "drawLabel" matches Sigma 2's prop). Our custom renderer
+          // adds a pill background + landmark-tier sizing.
+          defaultDrawNodeLabel: drawLabelPill,
         }}
       >
         <GraphLoader graph={graph} />
@@ -276,6 +445,7 @@ export default function CitationGraph({
         <CameraFitController />
         <ConstellationCamera />
         <InitialLandmarkZoom landmarks={landmarks} />
+        <GlowLayerBinder hoveredNode={hoveredNode} landmarks={landmarks} />
         <EffectsReducer
           hoveredNode={hoveredNode}
           semanticThreshold={semanticThreshold}
@@ -393,13 +563,15 @@ function ConstellationCamera() {
     }
     const graph = sigma.getGraph();
     if (!graph.hasNode(constellationFocus)) return;
-    const set = new Set<string>([
+    // Plain array (rather than Set) — TS target downlevelIteration is
+    // off and Set spread/iteration emits a TS2802 under that lib config.
+    const ids: string[] = [
       constellationFocus,
       ...graph.neighbors(constellationFocus),
-    ]);
+    ];
     const xs: number[] = [];
     const ys: number[] = [];
-    for (const id of set) {
+    for (const id of ids) {
       const a = graph.getNodeAttributes(id);
       xs.push(a.x);
       ys.push(a.y);
@@ -481,6 +653,189 @@ function CameraFitController() {
     window.addEventListener('citegraph:fit', fit);
     return () => window.removeEventListener('citegraph:fit', fit);
   }, [sigma]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Glow layer — binds the WebGL halo program and refreshes its slots each
+// frame from the same store/hover signals the EffectsReducer reads. Lives
+// in its own component so the layer's lifecycle is tied to the
+// SigmaContainer mount, separate from the reducer.
+// ---------------------------------------------------------------------------
+
+const HOVER_FADE_MS = 150;
+const PULSE_GLOW_MS = 1500;
+// Pulse colour is amber to match the existing pulse dot in the EffectsReducer.
+const PULSE_GLOW_RGB = { r: 245 / 255, g: 158 / 255, b: 11 / 255 };
+
+function GlowLayerBinder({
+  hoveredNode,
+  landmarks,
+}: {
+  hoveredNode: string | null;
+  landmarks: string[];
+}) {
+  const sigma = useSigma();
+  const highlightedNodeId = useGraphFocus((s) => s.highlightedNodeId);
+  const pulseToken = useGraphFocus((s) => s.pulseToken);
+
+  // rAF-driven glow state writer. Reads node attributes from sigma's
+  // graph each tick — positions are stable except during layout, but we
+  // re-read defensively because the cost is trivial.
+  //
+  // The function runs more frequently than EffectsReducer's main rAF
+  // loop because its triggering conditions (hover, pulse-fade-in,
+  // pulse-fade-out, landmark breathing) form a wider set. We bind a
+  // dedicated loop here rather than fight the existing reducer one.
+  const hoverStartedRef = useRef<number>(0);
+  const lastHoveredRef = useRef<string | null>(null);
+  const pulseStartedRef = useRef<number>(0);
+  const lastPulseTokenRef = useRef<number>(0);
+
+  // Bind layer once when sigma is ready. The layer survives across
+  // renders — only kill on unmount.
+  useEffect(() => {
+    const cleanup = bindWebGLLayer('glow', sigma, GlowLayerProgram);
+    return cleanup;
+  }, [sigma]);
+
+  // Track hover transition timestamps so the fade-in animates over
+  // HOVER_FADE_MS rather than snapping on/off.
+  useEffect(() => {
+    if (hoveredNode !== lastHoveredRef.current) {
+      hoverStartedRef.current = performance.now();
+      lastHoveredRef.current = hoveredNode;
+    }
+  }, [hoveredNode]);
+
+  // Same idea for pulse: a fresh pulseToken means a new fade-out cycle.
+  useEffect(() => {
+    if (pulseToken !== lastPulseTokenRef.current) {
+      pulseStartedRef.current = performance.now();
+      lastPulseTokenRef.current = pulseToken;
+    }
+  }, [pulseToken]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const reducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+
+    let raf = 0;
+    const tick = (now: number) => {
+      const graph = sigma.getGraph();
+      const slots = glowState.slots;
+      let count = 0;
+
+      // 1. Landmark ambient — community colour at 20% intensity, with an
+      //    optional sine breathing on radius. Synced at 1.5s period to
+      //    match the EffectsReducer's existing breathing phase.
+      const breathePhase = (now / 1500) % (2 * Math.PI);
+      for (let i = 0; i < landmarks.length && count < slots.length; i++) {
+        const id = landmarks[i];
+        if (!graph.hasNode(id)) continue;
+        try {
+          const a = graph.getNodeAttributes(id);
+          const baseR = (a.size as number) * 2.0;
+          const breath = reducedMotion
+            ? 0
+            : 0.5 + 0.5 * Math.sin(breathePhase + i * 0.7);
+          const radius = baseR * (1 + (reducedMotion ? 0 : breath * 0.15));
+          const c = hexToRgbFloat((a.color as string) || '#64748b');
+          const slot = slots[count++];
+          slot.x = a.x as number;
+          slot.y = a.y as number;
+          slot.radius = radius;
+          slot.intensity = 0.2;
+          slot.r = c.r;
+          slot.g = c.g;
+          slot.b = c.b;
+        } catch {
+          // ignore: node probably mid-mutation
+        }
+      }
+
+      // 2. Hover — brighter, larger. Fades in over HOVER_FADE_MS.
+      if (hoveredNode && graph.hasNode(hoveredNode) && count < slots.length) {
+        const elapsed = now - hoverStartedRef.current;
+        const t = reducedMotion ? 1 : Math.min(1, elapsed / HOVER_FADE_MS);
+        try {
+          const a = graph.getNodeAttributes(hoveredNode);
+          const c = hexToRgbFloat((a.color as string) || '#f59e0b');
+          const slot = slots[count++];
+          slot.x = a.x as number;
+          slot.y = a.y as number;
+          slot.radius = (a.size as number) * 3.5;
+          slot.intensity = 0.5 * t;
+          slot.r = c.r;
+          slot.g = c.g;
+          slot.b = c.b;
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. Pulse — amber glow, 1.5s linear fade-out.
+      if (
+        highlightedNodeId &&
+        graph.hasNode(highlightedNodeId) &&
+        count < slots.length
+      ) {
+        const elapsed = now - pulseStartedRef.current;
+        const t = reducedMotion
+          ? 0.8
+          : Math.max(0, 1 - elapsed / PULSE_GLOW_MS);
+        if (t > 0) {
+          try {
+            const a = graph.getNodeAttributes(highlightedNodeId);
+            const slot = slots[count++];
+            slot.x = a.x as number;
+            slot.y = a.y as number;
+            slot.radius = (a.size as number) * 4.0;
+            slot.intensity = 0.8 * t;
+            slot.r = PULSE_GLOW_RGB.r;
+            slot.g = PULSE_GLOW_RGB.g;
+            slot.b = PULSE_GLOW_RGB.b;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      glowState.count = count;
+
+      // Trigger Sigma to redraw — `layoutUnchange: true` skips the heavy
+      // reprocess pass and just re-runs the render loop, which fires
+      // `afterRender` and lets the layer paint with fresh uniforms.
+      try {
+        sigma.scheduleRefresh({ layoutUnchange: true });
+      } catch {
+        // ignore
+      }
+
+      // Continue while there's anything to animate. Reduced-motion still
+      // requires one tick to settle into final values, but we can stop
+      // looping after that.
+      const stillAnimating =
+        landmarks.length > 0 ||
+        hoveredNode !== null ||
+        (highlightedNodeId !== null &&
+          now - pulseStartedRef.current < PULSE_GLOW_MS);
+      if (reducedMotion && !stillAnimating) {
+        return;
+      }
+      if (!stillAnimating) {
+        // One last frame with everything cleared so we don't leave
+        // stale slots glowing on screen.
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [sigma, hoveredNode, highlightedNodeId, landmarks]);
+
   return null;
 }
 
@@ -744,7 +1099,12 @@ function EffectsReducer({
         lastTick = now;
         phaseRef.current = (now / 1500) % (2 * Math.PI);
         try {
-          sigma.scheduleRefresh({ skipIndexation: true });
+          // Sigma 3 replaced `skipIndexation` with `layoutUnchange`. We
+          // never mutate node positions inside the rAF loop (positions
+          // are committed by FA2 well before this runs), so flagging
+          // the layout as unchanged tells sigma to redraw without
+          // re-indexing — same fast path as the old API.
+          sigma.scheduleRefresh({ layoutUnchange: true });
         } catch {
           try {
             sigma.refresh();

@@ -35,6 +35,7 @@ from backend.models import SemanticSimilarity
 from backend.schemas import (
     Citation,
     CitationOutgoing,
+    CourtListenerHit,
     Document,
     DocumentDetailResponse,
     DocumentsResponse,
@@ -44,6 +45,10 @@ from backend.schemas import (
     GraphResponse,
     HealthResponse,
     IngestResponse,
+    NeighborhoodCitationEdge,
+    NeighborhoodGraph,
+    NeighborhoodNodeData,
+    NeighborhoodSemanticEdge,
     RelatedCase,
     SearchHit,
     SearchRequest,
@@ -239,7 +244,12 @@ async def get_document_status(doc_id: str, db: AsyncSession = Depends(get_async_
         )
     ).scalar_one()
 
-    if total == 0:
+    # Track A: explicit failure flag from the extractor wins over the
+    # derived processing/completed signal. Documents with the flag set
+    # never proceeded to embedding, so they are surface-level "failed".
+    if document.status == "extraction_failed":
+        status_value = "failed"
+    elif total == 0:
         status_value = "processing"
     else:
         status_value = "completed"
@@ -680,6 +690,389 @@ async def get_stats(db: AsyncSession = Depends(get_async_db)):
         resolution_rate=round(rate, 4),
         avg_confidence=round(float(avg_confidence or 0.0), 4),
     )
+
+
+# --- Track B: case-centric neighborhood + CourtListener entry point ---------
+
+
+async def _build_neighborhood(
+    db: AsyncSession,
+    focal_id: str,
+    depth: int,
+    exclude: Optional[set] = None,
+) -> tuple[
+    list[NeighborhoodNodeData],
+    list[NeighborhoodCitationEdge],
+    list[NeighborhoodSemanticEdge],
+]:
+    """Shared core for /v1/neighborhood/{id} + /expand.
+
+    Walks outgoing/incoming citations from the focal node, then from
+    each depth-1 neighbour at depth=2, capped at 80 nodes total. Also
+    returns the focal's top-10 semantic neighbours from
+    `semantic_similarity`. `exclude` filters nodes the caller already
+    has — used by the /expand variant to return only the diff.
+    """
+    exclude = exclude or set()
+    NODE_CAP = 80
+    SEMANTIC_TOP_K = 10
+
+    # Focal first.
+    focal_row = await db.execute(
+        select(DocumentModel).where(DocumentModel.id == focal_id)
+    )
+    focal = focal_row.scalar_one_or_none()
+    if focal is None:
+        raise NotFoundError("Document not found", {"document_id": focal_id})
+
+    # ---- Citation edges, depth 1 ----
+    out_rows = await db.execute(
+        select(CitationModel, DocumentModel)
+        .join(DocumentModel, DocumentModel.id == CitationModel.to_doc_id)
+        .where(
+            CitationModel.from_doc_id == focal_id,
+            CitationModel.to_doc_id.isnot(None),
+        )
+    )
+    in_rows = await db.execute(
+        select(CitationModel, DocumentModel)
+        .join(DocumentModel, DocumentModel.id == CitationModel.from_doc_id)
+        .where(CitationModel.to_doc_id == focal_id)
+    )
+
+    docs: dict[str, DocumentModel] = {focal.id: focal}
+    citation_edges_raw: list[tuple[str, str, float, str]] = []
+
+    for cite, target in out_rows.all():
+        docs[target.id] = target
+        citation_edges_raw.append(
+            (focal_id, target.id, cite.confidence, cite.citation_type)
+        )
+
+    for cite, source in in_rows.all():
+        docs[source.id] = source
+        citation_edges_raw.append(
+            (source.id, focal_id, cite.confidence, cite.citation_type)
+        )
+
+    # ---- Depth 2: pull each depth-1 neighbour's outgoing citations ----
+    if depth >= 2 and len(docs) <= NODE_CAP:
+        depth1_ids = [d for d in docs.keys() if d != focal_id]
+        if depth1_ids:
+            d2_rows = await db.execute(
+                select(CitationModel, DocumentModel)
+                .join(DocumentModel, DocumentModel.id == CitationModel.to_doc_id)
+                .where(
+                    CitationModel.from_doc_id.in_(depth1_ids),
+                    CitationModel.to_doc_id.isnot(None),
+                )
+                .order_by(CitationModel.confidence.desc())
+            )
+            for cite, target in d2_rows.all():
+                if len(docs) >= NODE_CAP:
+                    break
+                docs.setdefault(target.id, target)
+                citation_edges_raw.append(
+                    (cite.from_doc_id, target.id, cite.confidence, cite.citation_type)
+                )
+
+    # ---- Top-K semantic neighbours (focal-anchored) ----
+    sem_rows = await db.execute(
+        select(SemanticSimilarity, DocumentModel)
+        .join(DocumentModel, DocumentModel.id == SemanticSimilarity.target_id)
+        .where(SemanticSimilarity.source_id == focal_id)
+        .order_by(SemanticSimilarity.similarity_score.desc())
+        .limit(SEMANTIC_TOP_K)
+    )
+    semantic_edges_raw: list[tuple[str, str, float]] = []
+    for sim, target in sem_rows.all():
+        if len(docs) >= NODE_CAP and target.id not in docs:
+            continue
+        docs.setdefault(target.id, target)
+        semantic_edges_raw.append((focal_id, target.id, sim.similarity_score))
+
+    # ---- Compute in-degree (for node `size`) within the local subgraph ----
+    in_deg: dict[str, int] = {}
+    for src, tgt, _conf, _type in citation_edges_raw:
+        in_deg[tgt] = in_deg.get(tgt, 0) + 1
+
+    # ---- Filter out excluded ids ----
+    nodes_out: list[NeighborhoodNodeData] = []
+    for doc_id, doc in docs.items():
+        if doc_id in exclude:
+            continue
+        nodes_out.append(
+            NeighborhoodNodeData(
+                id=doc.id,
+                title=doc.title,
+                court=doc.court,
+                year=doc.year,
+                size=in_deg.get(doc.id, 1),
+                color=None,
+                focal=(doc.id == focal_id),
+                status=doc.status,
+            )
+        )
+
+    cite_out: list[NeighborhoodCitationEdge] = []
+    for src, tgt, conf, ctype in citation_edges_raw:
+        if src in exclude and tgt in exclude:
+            continue
+        cite_out.append(
+            NeighborhoodCitationEdge(
+                source=src, target=tgt, confidence=conf, citation_type=ctype
+            )
+        )
+
+    sem_out: list[NeighborhoodSemanticEdge] = []
+    for src, tgt, score in semantic_edges_raw:
+        if src in exclude and tgt in exclude:
+            continue
+        sem_out.append(
+            NeighborhoodSemanticEdge(
+                source=src, target=tgt, similarity_score=score
+            )
+        )
+
+    return nodes_out, cite_out, sem_out
+
+
+@app.get("/v1/neighborhood/{doc_id}", response_model=NeighborhoodGraph)
+async def get_neighborhood(
+    doc_id: str,
+    depth: int = Query(default=1, ge=1, le=2),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Focal node + its citation + semantic neighbours.
+
+    Used by the case-centric /graph?focus= mode. Read-only — no
+    side-effects on the document, citations, or similarity tables.
+    """
+    nodes, cites, sems = await _build_neighborhood(db, doc_id, depth)
+    return NeighborhoodGraph(
+        focal_id=doc_id,
+        nodes=nodes,
+        citation_edges=cites,
+        semantic_edges=sems,
+    )
+
+
+@app.get(
+    "/v1/neighborhood/{doc_id}/expand",
+    response_model=NeighborhoodGraph,
+)
+async def expand_neighborhood(
+    doc_id: str,
+    exclude: str = Query(default=""),
+    depth: int = Query(default=1, ge=1, le=2),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Diff between this node's neighborhood and a list the caller
+    already has on screen.
+
+    Frontend passes `exclude=` as a comma-separated list of node ids
+    already rendered in the Sigma graph; the response contains only
+    the new nodes + edges. Saves a full re-render on expand.
+    """
+    excluded = {part for part in (exclude or "").split(",") if part}
+    nodes, cites, sems = await _build_neighborhood(db, doc_id, depth, excluded)
+    return NeighborhoodGraph(
+        focal_id=doc_id,
+        nodes=nodes,
+        citation_edges=cites,
+        semantic_edges=sems,
+    )
+
+
+@app.get("/v1/courtlistener/search", response_model=list[CourtListenerHit])
+async def courtlistener_search(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(default=8, ge=1, le=20),
+):
+    """Free-text case lookup. Powers the entry-point search dropdown.
+
+    Returns up to `limit` CourtListener hits — relevance-ranked by CL
+    itself. Anonymous queries are heavily rate-limited; setting
+    COURTLISTENER_API_KEY raises the cap. The frontend's 400ms
+    debounce keeps each lookup well under the quota.
+    """
+    from backend.courtlistener import search_cases
+
+    raw = await search_cases(q, limit=limit)
+    return [CourtListenerHit(**hit) for hit in raw]
+
+
+@app.post("/v1/courtlistener/ingest/{cl_id}", response_model=IngestResponse)
+async def courtlistener_ingest(
+    cl_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Ingest a CourtListener cluster as a Document + enqueue processing.
+
+    Idempotent: if a document with the cluster's `absolute_url` is
+    already in the corpus, returns its id without re-ingesting.
+    Otherwise pulls the lead opinion's plain_text, synthesises a PDF
+    via courtlistener.synthesize_pdf, persists the row with
+    `full_text=body` (so the worker has good text even if pymupdf4llm
+    underperforms on the synthetic PDF), and enqueues `process_pdf_job`.
+    """
+    import hashlib
+    import uuid as _uuid
+
+    from backend.courtlistener import (
+        fetch_cluster,
+        fetch_opinion,
+        synthesize_pdf,
+    )
+
+    cluster_url = (
+        f"https://www.courtlistener.com/api/rest/v4/clusters/{cl_id}/"
+    )
+    cluster = await fetch_cluster(cluster_url)
+    if cluster is None:
+        raise NotFoundError(
+            "CourtListener cluster not found", {"cl_id": cl_id}
+        )
+
+    sub_opinions = cluster.get("sub_opinions") or []
+    if not sub_opinions:
+        raise NotFoundError(
+            "Cluster has no sub-opinions",
+            {"cl_id": cl_id, "case_name": cluster.get("case_name")},
+        )
+
+    opinion = await fetch_opinion(sub_opinions[0])
+    if opinion is None:
+        raise NotFoundError("Opinion fetch failed", {"cl_id": cl_id})
+
+    # Older CourtListener clusters store text in `plain_text`; newer ones
+    # increasingly only populate `html_with_citations` (sometimes
+    # `html_columbia` / `html_lawbox`). Walk these in order and strip
+    # HTML tags as a coarse fallback when we can't get clean text.
+    body = (opinion.get("plain_text") or "").strip()
+    if not body:
+        for html_field in ("html", "html_with_citations", "html_columbia", "html_lawbox"):
+            html_blob = opinion.get(html_field) or ""
+            if len(html_blob) > 500:
+                # Cheap HTML strip — we only need readable text for
+                # eyecite + embedding, not pixel-perfect rendering. The
+                # extractor's _strip_markdown handles any leftovers.
+                import re as _re
+                body = _re.sub(r"<[^>]+>", " ", html_blob)
+                body = _re.sub(r"\s+", " ", body).strip()
+                break
+    if not body:
+        raise BadInputError(
+            "Opinion has no extractable text (plain_text and html fields are empty)"
+        )
+
+    case_name = cluster.get("case_name") or f"CL-{cl_id}"
+    absolute_url = cluster.get("absolute_url") or ""
+    full_url = (
+        f"https://www.courtlistener.com{absolute_url}"
+        if absolute_url and absolute_url.startswith("/")
+        else absolute_url
+    )
+
+    # Idempotency: same cluster URL already in the corpus.
+    if full_url:
+        existing_row = await db.execute(
+            select(DocumentModel).where(DocumentModel.source_url == full_url)
+        )
+        existing = existing_row.scalar_one_or_none()
+        if existing is not None:
+            return IngestResponse(document_id=existing.id, status="exists")
+
+    # Idempotency: same body fingerprint.
+    fingerprint = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    fp_row = await db.execute(
+        select(DocumentModel).where(DocumentModel.fingerprint == fingerprint)
+    )
+    fp_existing = fp_row.scalar_one_or_none()
+    if fp_existing is not None:
+        return IngestResponse(document_id=fp_existing.id, status="exists")
+
+    # Build the synthetic PDF + persist.
+    os.makedirs(settings.pdf_storage_path, exist_ok=True)
+    safe_stub = "".join(c if c.isalnum() or c in "-_" else "_" for c in case_name)[:60]
+    pdf_path = os.path.join(
+        settings.pdf_storage_path,
+        f"cl_{cl_id}_{safe_stub}_{fingerprint[:8]}.pdf",
+    )
+    synthesize_pdf(pdf_path, case_name, body)
+
+    date_filed = cluster.get("date_filed") or ""
+    year_val: Optional[int] = None
+    if date_filed:
+        try:
+            year_val = int(str(date_filed)[:4])
+        except ValueError:
+            pass
+
+    document = DocumentModel(
+        id=str(_uuid.uuid4()),
+        title=case_name,
+        fingerprint=fingerprint,
+        source_path=pdf_path,
+        source_url=full_url or None,
+        court=cluster.get("court") or None,
+        year=year_val,
+        docket=cluster.get("docket_number") or None,
+        full_text=body,  # seed-style bypass — the worker re-extracts.
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+
+    try:
+        redis = await _get_redis()
+        await redis.enqueue_job("process_pdf_job", document.id)
+        status_value = "queued"
+    except Exception as e:
+        logger.warning(
+            "Failed to enqueue CourtListener doc",
+            doc_id=document.id,
+            error=str(e),
+        )
+        status_value = "queued_failed"
+
+    return IngestResponse(document_id=document.id, status=status_value)
+
+
+@app.delete("/v1/documents/{doc_id}")
+async def delete_document(
+    doc_id: str,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a document and its dependent rows.
+
+    Citations and semantic_similarity rows cascade-delete via existing
+    FK ON DELETE CASCADE constraints. The PDF on disk is removed
+    best-effort; if the file is missing the row deletion still
+    succeeds. Used by the /documents "Remove from library" action.
+    """
+    row = await db.execute(
+        select(DocumentModel).where(DocumentModel.id == doc_id)
+    )
+    document = row.scalar_one_or_none()
+    if document is None:
+        raise NotFoundError("Document not found", {"document_id": doc_id})
+
+    pdf_path = document.source_path
+    await db.delete(document)
+    await db.commit()
+
+    if pdf_path and os.path.exists(pdf_path):
+        try:
+            os.remove(pdf_path)
+        except OSError as e:
+            logger.warning(
+                "Failed to delete PDF file",
+                path=pdf_path,
+                error=str(e),
+            )
+
+    return {"status": "deleted", "document_id": doc_id}
 
 
 # --- Semantic similarity / search (/api prefix) ------------------------------

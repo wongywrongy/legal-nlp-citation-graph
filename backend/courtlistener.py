@@ -131,6 +131,124 @@ async def fetch_cluster(url: str) -> Optional[dict]:
     return resp.json()
 
 
+async def search_cases(query: str, limit: int = 8) -> List[dict]:
+    """Free-text case lookup against CourtListener's search endpoint.
+
+    Used by /v1/courtlistener/search to power the entry-point search
+    bar. CourtListener's /api/rest/v4/search/ endpoint already ranks by
+    relevance, so we just take the top `limit` and map the relevant
+    fields out. Anonymous queries are heavily rate-limited; setting
+    `COURTLISTENER_API_KEY` in `.env` raises the cap. The frontend's
+    400 ms debounce + `limit=8` keeps each lookup well under the
+    anonymous quota in practice.
+
+    Returns a list of dicts with the shape:
+      cl_id, case_name, court, year, citation_string, absolute_url
+    Empty list on failure (network error, rate limit, no results) —
+    callers should surface "no results" rather than raise.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    url = f"{BASE_URL}/search/"
+    params = {"q": query, "type": "o"}
+
+    async with httpx.AsyncClient(timeout=15.0, headers=_auth_headers()) as client:
+        try:
+            resp = await client.get(url, params=params)
+        except httpx.RequestError as e:
+            logger.warning("CourtListener search error", error=str(e), q=query)
+            return []
+
+    if resp.status_code != 200:
+        logger.warning(
+            "CourtListener search non-200",
+            status=resp.status_code,
+            q=query,
+            body=resp.text[:200],
+        )
+        return []
+
+    payload = resp.json()
+    raw_results = payload.get("results") or []
+    out: List[dict] = []
+    for hit in raw_results[:limit]:
+        # CourtListener v4 nests cluster fields directly on the hit.
+        # `cluster_id` is the canonical cluster id we use for ingest.
+        # Some hits return citation as a list ("citation" array of
+        # strings) — pick the first or stitch a "vol reporter page"
+        # tuple from the hit's volume/reporter/page if present.
+        cluster_id = hit.get("cluster_id")
+        if cluster_id is None:
+            continue
+        case_name = hit.get("caseName") or hit.get("case_name") or ""
+        if not case_name:
+            continue
+
+        # Year extraction: prefer dateFiled, fall back to dateArgued.
+        year_val: Optional[int] = None
+        for k in ("dateFiled", "dateArgued"):
+            d = hit.get(k)
+            if d:
+                try:
+                    year_val = int(str(d)[:4])
+                    break
+                except ValueError:
+                    pass
+
+        # Citation string: CL returns `citation` as a list of strings
+        # for matched citations; pick the first.
+        citation_string: Optional[str] = None
+        cites = hit.get("citation")
+        if isinstance(cites, list) and cites:
+            citation_string = str(cites[0])
+        elif isinstance(cites, str):
+            citation_string = cites
+
+        out.append(
+            {
+                "cl_id": int(cluster_id),
+                "case_name": case_name,
+                "court": hit.get("court") or hit.get("court_id"),
+                "year": year_val,
+                "citation_string": citation_string,
+                "absolute_url": hit.get("absolute_url") or "",
+            }
+        )
+    return out
+
+
+def synthesize_pdf(path: str, title: str, body: str) -> None:
+    """Render plain text to a multi-page PDF for the existing pipeline.
+
+    Extracted from `scripts/seed.py::_build_pdf` so the
+    `/v1/courtlistener/ingest/{cl_id}` endpoint can reuse it without
+    importing a script module. Behaviour identical: ~2800-char chunks
+    per page using PyMuPDF's `insert_textbox`. Synthetic PDFs may
+    extract weakly via pymupdf4llm — that's why the seed path also
+    writes `full_text=body` directly so the worker can fall back to
+    the existing column when extraction comes up short (see
+    document_processor's quality guard).
+    """
+    import fitz  # PyMuPDF — already a dep
+
+    doc = fitz.open()
+    text = f"{title}\n\n{body}".strip()
+    chunk_size = 2800
+    cursor = 0
+    while cursor < len(text):
+        page = doc.new_page()
+        rect = fitz.Rect(72, 72, page.rect.width - 72, page.rect.height - 72)
+        chunk = text[cursor : cursor + chunk_size]
+        page.insert_textbox(rect, chunk, fontsize=10, fontname="helv")
+        cursor += chunk_size
+    if doc.page_count == 0:
+        doc.new_page()
+    doc.save(path)
+    doc.close()
+
+
 async def fetch_opinion(url: str) -> Optional[dict]:
     """Fetch a single opinion record by URL.
 

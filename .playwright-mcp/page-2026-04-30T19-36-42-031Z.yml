@@ -1,0 +1,32 @@
+- dialog "Unhandled Runtime Error" [ref=e99]:
+  - generic [ref=e100]:
+    - generic [ref=e101]:
+      - generic [ref=e102]:
+        - navigation [ref=e103]:
+          - button "previous" [disabled] [ref=e104]:
+            - img "previous" [ref=e105]
+          - button "next" [disabled] [ref=e107]:
+            - img "next" [ref=e108]
+          - generic [ref=e110]: 1 of 1 unhandled error
+          - generic [ref=e111]:
+            - text: Next.js (14.0.3) is outdated
+            - link "(learn more)" [ref=e113] [cursor=pointer]:
+              - /url: https://nextjs.org/docs/messages/version-staleness
+        - button "Close" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+      - heading "Unhandled Runtime Error" [level=1] [ref=e119]
+      - paragraph [ref=e120]: "Error: loadProgram: error while linking the program: Fragment shader version does not match other shader versions. \x00"
+    - generic [ref=e121]:
+      - heading "Source" [level=2] [ref=e122]
+      - generic [ref=e123]:
+        - link "src/lib/sigma-glow-layer.ts (135:15) @ new GlowLayerProgram" [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: src/lib/sigma-glow-layer.ts (135:15) @ new GlowLayerProgram
+          - img [ref=e127]
+        - generic [ref=e131]: "133 | `; 134 | > 135 | export default class GlowLayerProgram extends WebGLLayerProgram { | ^ 136 | getCustomLayerDefinition(): WebGLLayerDefinition { 137 | return { 138 | FRAGMENT_SHADER_SOURCE,"
+      - heading "Call Stack" [level=2] [ref=e132]
+      - generic [ref=e133]:
+        - heading "eval" [level=3] [ref=e134]
+        - link "src/components/CitationGraph.tsx (564:35)" [ref=e135] [cursor=pointer]:
+          - generic [ref=e136]: src/components/CitationGraph.tsx (564:35)
+          - img [ref=e137]
+      - button "Show collapsed frames" [ref=e141] [cursor=pointer]

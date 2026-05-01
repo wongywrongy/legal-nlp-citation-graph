@@ -13,16 +13,19 @@
  *   ?focus=<id>  pulse a specific node + open inspector
  *   ?q=<query>   run semantic search, focus camera on hit set
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
+  ArrowRight,
+  Loader2,
   Network,
   SlidersHorizontal,
   Sparkles,
   Upload,
 } from 'lucide-react';
+import { documentApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,12 +68,27 @@ const DEFAULT_THRESHOLD = 0.85;
 const FALLBACK_THRESHOLD = 0.7;
 
 export default function GraphPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const querySeed = searchParams?.get('q') ?? '';
   const focusId = searchParams?.get('focus') ?? '';
+  const expandedParam = searchParams?.get('expanded') ?? '';
+  const expansionIds = useMemo(
+    () => (expandedParam ? expandedParam.split(',').filter(Boolean) : []),
+    [expandedParam],
+  );
+  const mode: 'corpus' | 'neighborhood' = focusId ? 'neighborhood' : 'corpus';
   const setFocus = useGraphFocus((s) => s.setFocus);
   const pulseGraph = useGraphFocus((s) => s.pulse);
+  const addRecent = useGraphFocus((s) => s.addRecent);
   const showInspector = useInspector((s) => s.show);
+
+  // Track B — focal status for the processing-state status bar.
+  const [focalStatus, setFocalStatus] = useState<{
+    status: string | null;
+    citations: number;
+    embedded: boolean;
+  }>({ status: null, citations: 0, embedded: false });
 
   const [corpusEmpty, setCorpusEmpty] = useState<boolean | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -116,12 +134,73 @@ export default function GraphPage() {
     });
   };
 
-  // Direct deep-link: ?focus=<id> pulses + opens the inspector.
+  // Direct deep-link: ?focus=<id> pulses + opens the inspector + records
+  // the case in localStorage recents so the entry-point can surface it.
   useEffect(() => {
     if (!focusId) return;
     pulseGraph(focusId);
     showInspector({ kind: 'document', id: focusId });
-  }, [focusId, pulseGraph, showInspector]);
+    // Fetch the case metadata to populate the recents entry. Best-effort:
+    // if the API fails, we silently skip the recents update.
+    documentApi
+      .getDocument(focusId)
+      .then((detail) => {
+        const doc = detail.document;
+        addRecent({
+          id: doc.id,
+          title: doc.title,
+          court: doc.court ?? null,
+          year: doc.year ?? null,
+        });
+      })
+      .catch(() => {});
+  }, [focusId, pulseGraph, showInspector, addRecent]);
+
+  // Track B — poll /v1/documents/{id}/status while the focal is in
+  // 'processing'. When it completes, the CitationGraph mode-effect
+  // refetches the neighborhood and the new structure appears.
+  const lastStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (mode !== 'neighborhood' || !focusId) return;
+    if (focalStatus.status === 'completed' || focalStatus.status === 'failed') {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const s = await documentApi.getDocumentStatus(focusId);
+        if (cancelled) return;
+        if (s.status !== lastStatusRef.current) {
+          lastStatusRef.current = s.status;
+        }
+        setFocalStatus({
+          status: s.status,
+          citations: s.citations_count,
+          embedded: s.status === 'completed',
+        });
+        if (s.status === 'completed' || s.status === 'failed') return;
+        window.setTimeout(tick, 3000);
+      } catch {
+        // Network blip — try again.
+        if (!cancelled) window.setTimeout(tick, 3000);
+      }
+    };
+    tick();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, mode, focalStatus.status]);
+
+  const onFocalStatus = useCallback((status: string | null, citations: number) => {
+    setFocalStatus((prev) => ({
+      ...prev,
+      status,
+      citations,
+      embedded: status === 'completed',
+    }));
+  }, []);
 
   // Plain semantic-search seed: ?q=<query> without ?focus= — pan camera.
   useEffect(() => {
@@ -182,10 +261,128 @@ export default function GraphPage() {
           semanticThreshold={semanticThreshold}
           onCounts={setCounts}
           onYears={setYears}
+          focusId={focusId || null}
+          expansionIds={expansionIds}
+          onFocalStatus={onFocalStatus}
         />
+        <ModeSwitcher mode={mode} router={router} />
+        {mode === 'neighborhood' && (
+          <FocalStatusBar status={focalStatus} focusId={focusId} />
+        )}
         <TimelineScrubber years={years} />
         <Legend />
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mode switcher — bottom-right pill toggling between focal + corpus views.
+// ---------------------------------------------------------------------------
+
+function ModeSwitcher({
+  mode,
+  router,
+}: {
+  mode: 'corpus' | 'neighborhood';
+  router: ReturnType<typeof useRouter>;
+}) {
+  if (mode === 'neighborhood') {
+    return (
+      <button
+        type="button"
+        onClick={() => router.push('/graph')}
+        className={cn(
+          'pointer-events-auto absolute right-3 top-12 z-10',
+          'inline-flex items-center gap-1 rounded-md border bg-background/85 px-2 py-1',
+          'text-[11px] text-muted-foreground backdrop-blur-sm transition-colors duration-150',
+          'hover:bg-background hover:text-foreground',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+        )}
+      >
+        Showing neighborhood
+        <span aria-hidden className="text-muted-foreground/60">·</span>
+        Switch to full corpus
+        <ArrowRight className="h-3 w-3" aria-hidden />
+      </button>
+    );
+  }
+  return (
+    <Link
+      href="/"
+      className={cn(
+        'pointer-events-auto absolute right-3 top-12 z-10',
+        'inline-flex items-center gap-1 rounded-md border bg-background/85 px-2 py-1',
+        'text-[11px] text-muted-foreground backdrop-blur-sm transition-colors duration-150',
+        'hover:bg-background hover:text-foreground',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+      )}
+    >
+      Showing full corpus
+      <span aria-hidden className="text-muted-foreground/60">·</span>
+      Focus on a case
+      <ArrowRight className="h-3 w-3" aria-hidden />
+    </Link>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Focal-status bar — Track B processing-state visibility.
+// ---------------------------------------------------------------------------
+
+function FocalStatusBar({
+  status,
+  focusId,
+}: {
+  status: { status: string | null; citations: number; embedded: boolean };
+  focusId: string;
+}) {
+  // Done state — nothing to show.
+  if (status.status === 'completed' && status.embedded) return null;
+  // Failed state — show retry hint.
+  if (status.status === 'failed') {
+    return (
+      <div
+        className={cn(
+          'pointer-events-auto absolute bottom-16 left-1/2 z-10 -translate-x-1/2',
+          'flex items-center gap-2 rounded-md border border-destructive/40',
+          'bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive shadow-sm backdrop-blur-sm',
+        )}
+      >
+        Extraction failed for this case.
+        <button
+          type="button"
+          onClick={() => documentApi.processDocument(focusId).catch(() => {})}
+          className="underline underline-offset-2 hover:no-underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  let message = 'Processing this case…';
+  if (status.status === 'processing' || status.citations === 0) {
+    message = 'Extracting citations…';
+  } else if (!status.embedded) {
+    message = 'Building semantic connections…';
+  } else {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        'pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2',
+        'flex items-center gap-2 rounded-md border bg-background/85 px-3 py-1.5',
+        'text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm',
+        'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150',
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="h-3 w-3 animate-spin motion-reduce:hidden" aria-hidden />
+      {message}
     </div>
   );
 }
@@ -274,7 +471,18 @@ function CountsLabel({ counts }: { counts: Counts }) {
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-3 rounded-full bg-blue-500" aria-hidden />
+        {/* Citation icon: tapered triangle, source-wide → target-thin.
+            Mirrors what the canvas actually renders so the legend
+            doubles as a visual key. */}
+        <svg
+          width={14}
+          height={6}
+          viewBox="0 0 14 6"
+          aria-hidden
+          className="shrink-0"
+        >
+          <polygon points="0,1 0,5 14,3" className="fill-blue-500" />
+        </svg>
         <span className="font-mono tabular-nums text-foreground">
           {counts.citationEdges}
         </span>
@@ -282,14 +490,24 @@ function CountsLabel({ counts }: { counts: Counts }) {
       </span>
       <span aria-hidden className="text-muted-foreground/40">·</span>
       <span className="flex items-center gap-1.5">
-        <span
-          className="inline-block h-0.5 w-3 rounded-full"
-          style={{
-            backgroundImage:
-              'repeating-linear-gradient(to right, #10b981, #10b981 3px, transparent 3px, transparent 6px)',
-          }}
+        {/* Semantic icon: a soft emerald arc, matching the curved edges
+            painted by @sigma/edge-curve. The arc reads as "related but
+            not directional" without needing a label. */}
+        <svg
+          width={14}
+          height={6}
+          viewBox="0 0 14 6"
           aria-hidden
-        />
+          className="shrink-0"
+        >
+          <path
+            d="M0 5 Q 7 -2 14 5"
+            fill="none"
+            stroke="#10b981"
+            strokeWidth={1.4}
+            strokeLinecap="round"
+          />
+        </svg>
         <span className="font-mono tabular-nums text-foreground">
           {counts.semanticEdges}
         </span>
@@ -471,18 +689,27 @@ function Legend() {
       aria-label="Graph edge legend"
     >
       <div className="flex items-center gap-2">
-        <span className="inline-block h-0.5 w-6 rounded-full bg-blue-500" aria-hidden />
+        {/* Tapered triangle — same shape the WebGL tapered edge program
+            paints. Wide at the source end, narrowing to a point at
+            the target so directionality reads from shape alone. */}
+        <svg width={24} height={6} viewBox="0 0 24 6" aria-hidden>
+          <polygon points="0,0.5 0,5.5 24,3" className="fill-blue-500" />
+        </svg>
         <span className="text-muted-foreground">Citation</span>
       </div>
       <div className="flex items-center gap-2">
-        <span
-          className="inline-block h-0.5 w-6"
-          style={{
-            backgroundImage:
-              'repeating-linear-gradient(to right, #10b981, #10b981 3px, transparent 3px, transparent 6px)',
-          }}
-          aria-hidden
-        />
+        {/* Curved emerald arc — matches @sigma/edge-curve. The curve
+            depth in the canvas is similarity-dependent (tighter scores
+            curve less); legend uses a mid-range arc as a representative. */}
+        <svg width={24} height={6} viewBox="0 0 24 6" aria-hidden>
+          <path
+            d="M0 5 Q 12 -2 24 5"
+            fill="none"
+            stroke="#10b981"
+            strokeWidth={1.4}
+            strokeLinecap="round"
+          />
+        </svg>
         <span className="text-muted-foreground">Semantic similarity</span>
       </div>
     </div>

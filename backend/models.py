@@ -56,6 +56,21 @@ class Document(Base):
     embedding = Column(EMBEDDING_TYPE, nullable=True)
     embedded_at = Column(DateTime, nullable=True)
 
+    # Track A — explicit failure flag for the extraction pipeline.
+    # NULL = healthy (derive processing/completed from embedded_at).
+    # 'extraction_failed' = pdf_processor produced <500 chars of body
+    # text; the worker chain skips embedding + enrichment.
+    # Future failure modes can land additional values here.
+    status = Column(String, nullable=True)
+
+    # Track A — per-page char offsets into `full_text`. Populated by
+    # pdf_processor when it stitches PyMuPDF4LLM page chunks together.
+    # Shape: [{"page": int, "start": int, "end": int}, ...]
+    page_offsets = Column(
+        JSONB().with_variant(JSON(), "sqlite"),
+        nullable=True,
+    )
+
     citations_from = relationship(
         "Citation",
         foreign_keys="Citation.from_doc_id",

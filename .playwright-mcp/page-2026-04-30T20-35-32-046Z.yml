@@ -1,0 +1,99 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: citegraph
+      - navigation [ref=e6]:
+        - link "Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+          - generic [ref=e13]: Dashboard
+        - link "Graph" [ref=e14] [cursor=pointer]:
+          - /url: /graph
+          - img [ref=e15]
+          - generic [ref=e20]: Graph
+        - link "Documents" [ref=e21] [cursor=pointer]:
+          - /url: /documents
+          - img [ref=e22]
+          - generic [ref=e25]: Documents
+        - link "Upload" [ref=e26] [cursor=pointer]:
+          - /url: /upload
+          - img [ref=e27]
+          - generic [ref=e30]: Upload
+      - generic [ref=e32]: Press ? for shortcuts
+    - generic [ref=e33]:
+      - banner [ref=e34]:
+        - navigation [ref=e35]:
+          - link "Dashboard" [ref=e37] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e38]:
+            - img [ref=e39]
+            - generic [ref=e41]: Graph
+        - search [ref=e43]:
+          - img [ref=e44]
+          - combobox "Semantic search" [ref=e47]
+        - generic [ref=e48]:
+          - button "⌘K" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+            - generic [ref=e52]: ⌘K
+          - button "Toggle inspector" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+          - button "Toggle theme" [ref=e57] [cursor=pointer]:
+            - img [ref=e58]
+      - main [ref=e64]:
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - img [ref=e71]
+                - generic [ref=e73]: "0"
+                - generic [ref=e74]: citation
+              - generic [ref=e75]: ·
+              - generic [ref=e76]:
+                - img [ref=e77]
+                - generic [ref=e79]: "0"
+                - generic [ref=e80]: similar
+            - generic [ref=e81]:
+              - generic [ref=e82]:
+                - generic [ref=e83]:
+                  - generic [ref=e84]: Similarity threshold
+                  - generic [ref=e85]: "0.85"
+                - generic [ref=e86]:
+                  - generic [ref=e87]:
+                    - generic [ref=e88]: Fewer
+                    - generic "Semantic similarity threshold" [ref=e90]:
+                      - slider [ref=e94]
+                    - generic [ref=e95]: More
+                  - button "No similar cases at this threshold — lower to 0.70?" [ref=e105] [cursor=pointer]
+              - button "Filters" [ref=e96] [cursor=pointer]:
+                - img [ref=e97]
+                - text: Filters
+          - generic [ref=e98]:
+            - button "Fit graph to view" [ref=e107] [cursor=pointer]: Fit view
+            - button "Showing neighborhood Switch to full corpus" [ref=e100] [cursor=pointer]:
+              - text: Showing neighborhood
+              - generic [ref=e101]: ·
+              - text: Switch to full corpus
+              - img [ref=e102]
+            - generic [ref=e119]:
+              - generic [ref=e121]: Timeline
+              - generic [ref=e135]:
+                - generic [ref=e136]: "2015"
+                - generic [ref=e141]: "2020"
+                - generic [ref=e146]: "2025"
+              - generic "Filter cases by year" [ref=e148]:
+                - slider "Minimum" [ref=e152]
+            - generic "Graph edge legend":
+              - generic:
+                - img
+                - generic: Citation
+              - generic:
+                - img
+                - generic: Semantic similarity
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e104]
+  - generic [ref=e155] [cursor=pointer]:
+    - img [ref=e156]
+    - generic [ref=e158]: 3 errors
+    - button "Hide Errors" [ref=e159]:
+      - img [ref=e160]

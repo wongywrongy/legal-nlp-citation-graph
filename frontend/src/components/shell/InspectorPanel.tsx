@@ -25,7 +25,8 @@
  * line so the panel doesn't shift between cases.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Crosshair, ExternalLink, Loader2, Sparkles, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { BookOpen, Crosshair, ExternalLink, Loader2, Network, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -153,6 +154,18 @@ function DocumentInspector({ id }: { id: string }) {
   const setConstellation = useGraphFocus((s) => s.setConstellation);
   const constellationFocus = useGraphFocus((s) => s.constellationFocus);
 
+  // Track B — neighborhood-mode awareness. When the user is on
+  // /graph?focus=X and inspects a NEIGHBOUR (id !== X), the panel
+  // surfaces an "Expand neighborhood" button that mirrors the on-graph
+  // popover. Reading the URL directly (rather than a prop) keeps the
+  // panel's interface stable across the rest of the app.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusId = searchParams?.get('focus') ?? '';
+  const expandedParam = searchParams?.get('expanded') ?? '';
+  const isNeighborhoodMode = !!focusId;
+  const isNonFocalNeighbor = isNeighborhoodMode && focusId !== id;
+
   useEffect(() => {
     let mounted = true;
     setData(null);
@@ -202,6 +215,44 @@ function DocumentInspector({ id }: { id: string }) {
       <Reveal delay={240}>
         <div className="flex flex-col gap-2">
           <FullTextSheet documentId={id} title={formatCaseTitle(doc.title)} />
+          {/* Track B — only shown when the inspected node is a NEIGHBOUR
+              of the current focal in /graph?focus=. Updates the URL's
+              ?expanded= list so a refresh restores the expanded state. */}
+          {isNonFocalNeighbor && (
+            <FooterAction
+              label="Expand this case's neighborhood"
+              icon={<Network className="h-3.5 w-3.5" />}
+              onClick={() => {
+                const current = expandedParam
+                  ? expandedParam.split(',').filter(Boolean)
+                  : [];
+                if (current.includes(id)) return;
+                const next = [...current, id].join(',');
+                router.replace(
+                  `/graph?focus=${focusId}&expanded=${next}`,
+                );
+              }}
+            />
+          )}
+          {/* Track B — open the original on CourtListener if the doc was
+              ingested via /v1/courtlistener/ingest. */}
+          {doc.source_url &&
+            /^https?:\/\/(www\.)?courtlistener\.com/.test(doc.source_url) && (
+              <a
+                href={doc.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  'inline-flex items-center justify-center gap-1.5 rounded-md',
+                  'border border-border bg-card py-2 text-sm font-medium',
+                  'transition-colors hover:bg-muted',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                )}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>Open in CourtListener</span>
+              </a>
+            )}
           <FooterAction
             label={
               inConstellation

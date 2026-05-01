@@ -114,12 +114,19 @@ def embed_text(text: str) -> List[float]:
     chunk vectors are mean-pooled and re-normalized. The return type and
     dimensionality are identical to the single-pass implementation, so
     callers don't need to change.
+
+    Returns the vector. Logs `chunks=N elapsed=Xs` so worker output shows
+    that the model is doing work for long docs (otherwise it sits silent
+    for ~5s on a 30-page opinion and the user thinks it's stuck).
     """
     if not text:
         return []
 
+    import time as _time
+
     import numpy as np
 
+    started = _time.perf_counter()
     model = get_model()
     tokenizer = model.tokenizer
 
@@ -156,7 +163,35 @@ def embed_text(text: str) -> List[float]:
     norm = float(np.linalg.norm(pooled))
     if norm > 0:
         pooled = pooled / norm
+
+    elapsed = _time.perf_counter() - started
+    if len(chunks) > 1:
+        logger.info(
+            "embed_text chunked",
+            tokens=len(token_ids),
+            chunks=len(chunks),
+            elapsed_s=round(elapsed, 2),
+        )
     return pooled.tolist()
+
+
+def warmup_models() -> None:
+    """Pre-load the bi-encoder (and cross-encoder if enabled) at startup.
+
+    Called from the ARQ worker's `on_startup`. Without this, the first
+    document to embed pays a ~5–10 second silent stall while the model
+    weights load — which looks identical to "the worker is stuck" in the
+    log output. Loading once on boot makes every subsequent job's
+    elapsed time honest.
+    """
+    if not settings.feature_embeddings:
+        return
+    logger.info("warming embedding model", model=settings.embedding_model)
+    get_model()
+    if settings.feature_cross_encoder:
+        logger.info("warming cross-encoder", model=settings.cross_encoder_model)
+        get_cross_encoder()
+    logger.info("models warm")
 
 
 async def top_k_for_document(

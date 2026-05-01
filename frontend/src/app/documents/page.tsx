@@ -14,6 +14,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
+import { Trash2 } from 'lucide-react';
+import { documentApi as docApi } from '@/lib/api';
+import {
   Table,
   TableBody,
   TableCell,
@@ -48,12 +58,41 @@ export default function DocumentsPage() {
   const openModal = useUploadStore((s) => s.openModal);
   const pendingItems = useUploadStore((s) => s.items);
 
+  const { toast } = useToast();
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // Track B — confirmation dialog for "Remove from library".
+  const [pendingDelete, setPendingDelete] =
+    useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleRemove = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await docApi.remove(pendingDelete.id);
+      setDocs((prev) =>
+        prev ? prev.filter((d) => d.id !== pendingDelete.id) : prev,
+      );
+      toast({
+        title: 'Removed',
+        description: `${pendingDelete.title} removed from your library.`,
+      });
+      setPendingDelete(null);
+    } catch (e) {
+      toast({
+        title: 'Could not remove',
+        description: e instanceof Error ? e.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Refresh on every "ready" transition so freshly-processed cases appear
   // in the table without manual reload.
@@ -201,9 +240,9 @@ export default function DocumentsPage() {
     <div className="mx-auto max-w-[1400px] px-6 py-6">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Documents</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Your library</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {docs ? `${docs.length} in corpus` : 'Loading…'}
+            {docs ? `${docs.length} ${docs.length === 1 ? 'case' : 'cases'} saved` : 'Loading…'}
             {pendingRows.length > 0 && (
               <>
                 <span aria-hidden> · </span>
@@ -295,6 +334,7 @@ export default function DocumentsPage() {
               >
                 Added
               </SortableHeader>
+              <TableHead className="w-[42px]" aria-label="Actions" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -304,14 +344,14 @@ export default function DocumentsPage() {
             {!docs &&
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-5" />
                   </TableCell>
                 </TableRow>
               ))}
             {docs && rows.length === 0 && pendingRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-xs text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-xs text-muted-foreground">
                   No documents match.
                 </TableCell>
               </TableRow>
@@ -348,12 +388,74 @@ export default function DocumentsPage() {
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {formatRelativeDate(doc.created_at)}
                   </TableCell>
+                  <TableCell>
+                    {/* Stop click propagation so the row's onClick to
+                        navigate to /graph doesn't fire when the user is
+                        opening the confirm dialog. */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingDelete({ id: doc.id, title: doc.title });
+                      }}
+                      className={cn(
+                        'inline-flex h-7 w-7 items-center justify-center rounded',
+                        'text-muted-foreground/60 transition-colors',
+                        'opacity-0 group-hover:opacity-100',
+                        'hover:bg-destructive/10 hover:text-destructive',
+                        'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+                      )}
+                      aria-label={`Remove ${doc.title} from library`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove from library?</DialogTitle>
+            <DialogDescription>
+              {pendingDelete && (
+                <>
+                  &ldquo;{formatCaseTitle(pendingDelete.title)}&rdquo; will be
+                  removed along with its citations and semantic neighbours.
+                  This cannot be undone.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleRemove}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Removing…' : 'Remove'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -383,6 +485,7 @@ function PendingRow({ item }: { item: UploadItem }) {
       <TableCell className="font-mono tabular-nums text-muted-foreground">
         just now
       </TableCell>
+      <TableCell />
     </TableRow>
   );
 }
