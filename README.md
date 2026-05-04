@@ -1,4 +1,4 @@
-# Legal Citation Graph
+# Legal Citation Graph (Currently stagnant due to lack of time)
 
 A local-first tool for law students and researchers to ingest a private
 corpus of legal opinions, extract citations, and explore the network — both
